@@ -26,16 +26,14 @@ final class WakeDoctorCommand extends Command
             return self::FAILURE;
         }
 
-        $handler->handle(new LogRecord(
+        $succeeded = $handler->probe(new LogRecord(
             datetime: new DateTimeImmutable,
             channel: 'wake-doctor',
             level: Level::Info,
             message: 'Wake doctor round trip',
             context: ['correlation_id' => 'wake-doctor'],
         ));
-        $handler->flush();
-
-        if ($handler->lastDeliverySucceeded() !== true) {
+        if (! $succeeded) {
             $this->components->error('Wake could not confirm an ingest round trip.');
 
             return self::FAILURE;

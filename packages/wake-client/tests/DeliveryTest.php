@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use ArtisanBuild\WakeClient\Contracts\PayloadFilter;
 use ArtisanBuild\WakeClient\Contracts\Transport;
+use ArtisanBuild\WakeClient\Filters\PassThroughPayloadFilter;
 use ArtisanBuild\WakeClient\Logging\LifecycleRegistrar;
 use ArtisanBuild\WakeClient\Logging\WakeHandler;
 use ArtisanBuild\WakeClient\Transport\HttpTransport;
@@ -16,6 +17,7 @@ use Monolog\Level;
 use Monolog\LogRecord;
 use Symfony\Component\Console\Input\ArrayInput;
 use Symfony\Component\Console\Output\BufferedOutput;
+use Symfony\Component\Process\Process;
 
 beforeEach(function (): void {
     config()->set([
@@ -149,6 +151,55 @@ it('flushes at ordinary application termination', function (): void {
     app()->terminate();
 
     Http::assertSentCount(1);
+});
+
+it('swallows filter and normalization exceptions into drop debt', function (): void {
+    app()->instance(PayloadFilter::class, new class implements PayloadFilter
+    {
+        public function filter(LogEvent $event): ?LogEvent
+        {
+            throw new RuntimeException('filter failed');
+        }
+    });
+    app()->forgetInstance(WakeHandler::class);
+    app(WakeHandler::class)->handle(deliveryRecord('filtered'));
+    expect(app(WakeHandler::class)->state()['dropped'])->toBe(1);
+
+    app()->instance(PayloadFilter::class, new PassThroughPayloadFilter);
+    app()->forgetInstance(WakeHandler::class);
+    $resource = fopen('php://memory', 'r');
+    app(WakeHandler::class)->handle(new LogRecord(new DateTimeImmutable, 'app', Level::Info, 'unsafe', ['bad' => $resource]));
+    fclose($resource);
+
+    expect(app(WakeHandler::class)->state()['dropped'])->toBe(1);
+});
+
+it('times out against a real slow HTTP server without throwing', function (): void {
+    $process = new Process([PHP_BINARY, __DIR__.'/Fixtures/slow-server.php']);
+    $process->start();
+    for ($attempt = 0; $attempt < 50 && trim($process->getOutput()) === ''; $attempt++) {
+        usleep(10_000);
+    }
+
+    try {
+        config()->set([
+            'wake.url' => 'http://'.trim($process->getOutput()),
+            'wake.token' => 'synthetic-token',
+            'wake.connect_timeout' => 0.1,
+            'wake.timeout' => 0.1,
+        ]);
+        app()->forgetInstance(Transport::class);
+        app()->forgetInstance(WakeHandler::class);
+        $handler = app(WakeHandler::class);
+        $handler->handle(deliveryRecord('slow'));
+
+        $started = microtime(true);
+        expect($handler->flush())->toBeFalse()
+            ->and(microtime(true) - $started)->toBeLessThan(0.6)
+            ->and($handler->state()['dropped'])->toBe(1);
+    } finally {
+        $process->stop();
+    }
 });
 
 function deliveryRecord(string $message): LogRecord

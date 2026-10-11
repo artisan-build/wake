@@ -62,10 +62,10 @@ final class WakeHandler extends AbstractHandler
         return false;
     }
 
-    public function flush(): void
+    public function flush(): bool
     {
         if ($this->buffer === [] || ! $this->configured() || $this->delivering) {
-            return;
+            return false;
         }
 
         $rows = array_splice($this->buffer, 0, min($this->batchSize, IngestProtocol::MAX_ROWS));
@@ -88,8 +88,12 @@ final class WakeHandler extends AbstractHandler
             }
 
             $this->droppedCount = max(0, $this->droppedCount - $reportedDrops);
+
+            return true;
         } catch (Throwable) {
             $this->droppedCount += count($rows);
+
+            return false;
         } finally {
             $this->delivering = false;
         }
@@ -109,6 +113,17 @@ final class WakeHandler extends AbstractHandler
     public function lastDeliverySucceeded(): ?bool
     {
         return $this->lastDeliverySucceeded;
+    }
+
+    public function probe(LogRecord $record): bool
+    {
+        $this->lastDeliverySucceeded = null;
+        $this->handle($record);
+        if ($this->lastDeliverySucceeded === null) {
+            $this->flush();
+        }
+
+        return $this->lastDeliverySucceeded === true;
     }
 
     private function configured(): bool

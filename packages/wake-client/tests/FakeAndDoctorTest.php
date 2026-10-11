@@ -2,10 +2,14 @@
 
 declare(strict_types=1);
 
+use ArtisanBuild\WakeClient\Contracts\PayloadFilter;
 use ArtisanBuild\WakeClient\Contracts\Transport;
 use ArtisanBuild\WakeClient\Logging\WakeHandler;
 use ArtisanBuild\WakeClient\Wake;
+use ArtisanBuild\WakeContracts\LogEvent;
 use Illuminate\Support\Facades\Http;
+use Monolog\Level;
+use Monolog\LogRecord;
 
 it('provides a public fake that captures the normal envelope path without HTTP', function (): void {
     config()->set(['wake.url' => null, 'wake.token' => null]);
@@ -45,6 +49,27 @@ it('doctor fails for partial configuration and malformed acceptance', function (
     $this->artisan('wake:doctor')
         ->assertFailed()
         ->doesntExpectOutputToContain('doctor-secret');
+});
+
+it('doctor cannot reuse a stale prior success when its record is rejected', function (): void {
+    config()->set(['wake.url' => 'https://wake.test', 'wake.token' => 'doctor-secret']);
+    $filter = new class implements PayloadFilter
+    {
+        public bool $reject = false;
+
+        public function filter(LogEvent $event): ?LogEvent
+        {
+            return $this->reject ? null : $event;
+        }
+    };
+    app()->instance(PayloadFilter::class, $filter);
+    app()->forgetInstance(WakeHandler::class);
+    Http::fake(['*' => Http::response(doctorReceipt(), 202)]);
+    $handler = app(WakeHandler::class);
+    expect($handler->probe(new LogRecord(new DateTimeImmutable, 'doctor', Level::Info, 'prior success')))->toBeTrue();
+
+    $filter->reject = true;
+    $this->artisan('wake:doctor')->assertFailed();
 });
 
 function doctorReceipt(): array

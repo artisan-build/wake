@@ -9,6 +9,7 @@ use ArtisanBuild\WakeServer\Models\StagingBatch;
 use Illuminate\Foundation\Testing\DatabaseMigrations;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Sleep;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
 
@@ -34,7 +35,7 @@ afterEach(function (): void {
 
 it('bootstraps real DuckLake on PostgreSQL and replays one batch without duplicate lake rows', function (): void {
     expect(is_executable(base_path('bin/duckdb')))->toBeTrue('Run scripts/install-duckdb.sh before the root test lane.');
-    $lake = app(DuckDb::class);
+    $lake = resolve(DuckDb::class);
     $batchId = (string) Str::ulid();
     $eventId = (string) Str::ulid();
     $days = ['2026-10-11'];
@@ -60,14 +61,14 @@ it('bootstraps real DuckLake on PostgreSQL and replays one batch without duplica
 it('converges exactly once after a real lake commit crash', function (): void {
     expect(is_executable(base_path('bin/duckdb')))->toBeTrue('Run scripts/install-duckdb.sh before the root test lane.');
     [$batchId, $eventId] = seedRealFlushBatch();
-    $lake = app(DuckDb::class);
+    $lake = resolve(DuckDb::class);
     $fault = static function (string $point): void {
         if ($point === 'after_lake_commit') {
             throw new RuntimeException('Injected after_lake_commit');
         }
     };
 
-    expect(fn () => (new FlushLogBatches($lake, app(LakeWriterLock::class), $fault))->run(1))
+    expect(fn () => (new FlushLogBatches($lake, resolve(LakeWriterLock::class), $fault))->run(1))
         ->toThrow(RuntimeException::class, 'Injected after_lake_commit');
     expect(DB::table('wake_flush_batches')->where('batch_id', $batchId)->value('state'))->toBe('claimed')
         ->and(realLakeBatchRows($lake, $batchId))->toBe(1)
@@ -77,7 +78,7 @@ it('converges exactly once after a real lake commit crash', function (): void {
         ->and(DB::table('wake_connected_apps')->value('flushed_rows'))->toBe(0)
         ->and(DB::table('wake_staging_batches')->where('batch_id', $batchId)->value('status'))->toBe('flushing');
 
-    expect((new FlushLogBatches($lake, app(LakeWriterLock::class)))->run(1))->toBe(['batches' => 1, 'rows' => 1])
+    expect((new FlushLogBatches($lake, resolve(LakeWriterLock::class)))->run(1))->toBe(['batches' => 1, 'rows' => 1])
         ->and(realLakeBatchRows($lake, $batchId))->toBe(1)
         ->and(DB::table('wake_event_locators')->where('event_id', $eventId)->count())->toBe(1)
         ->and(DB::table('wake_error_events')->where('event_id', $eventId)->count())->toBe(1)
@@ -90,14 +91,14 @@ it('converges exactly once after a real lake commit crash', function (): void {
 
 it('rolls back every derived effect before commit and converges exactly once on retry', function (): void {
     [$batchId, $eventId] = seedRealFlushBatch();
-    $lake = app(DuckDb::class);
+    $lake = resolve(DuckDb::class);
     $fault = static function (string $point): void {
         if ($point === 'before_derived_commit') {
             throw new RuntimeException('Injected before_derived_commit');
         }
     };
 
-    expect(fn () => (new FlushLogBatches($lake, app(LakeWriterLock::class), $fault))->run(1))
+    expect(fn () => (new FlushLogBatches($lake, resolve(LakeWriterLock::class), $fault))->run(1))
         ->toThrow(RuntimeException::class, 'Injected before_derived_commit');
     expect(DB::table('wake_flush_batches')->where('batch_id', $batchId)->value('state'))->toBe('lake_committed')
         ->and(realLakeBatchRows($lake, $batchId))->toBe(1)
@@ -108,7 +109,7 @@ it('rolls back every derived effect before commit and converges exactly once on 
         ->and(DB::table('wake_staging_batches')->where('batch_id', $batchId)->value('status'))->toBe('flushing')
         ->and(DB::table('wake_staging_batches')->where('batch_id', $batchId)->value('payload'))->not->toBeNull();
 
-    (new FlushLogBatches($lake, app(LakeWriterLock::class)))->run(1);
+    (new FlushLogBatches($lake, resolve(LakeWriterLock::class)))->run(1);
     expect(realLakeBatchRows($lake, $batchId))->toBe(1)
         ->and(DB::table('wake_event_locators')->where('event_id', $eventId)->count())->toBe(1)
         ->and(DB::table('wake_error_events')->where('event_id', $eventId)->count())->toBe(1)
@@ -149,7 +150,7 @@ it('allows only one synchronized independent flusher to perform real lake work',
         sort($results);
 
         expect(array_column($results, 'batches'))->toBe([0, 1])
-            ->and(realLakeBatchRows(app(DuckDb::class), $batchId))->toBe(1)
+            ->and(realLakeBatchRows(resolve(DuckDb::class), $batchId))->toBe(1)
             ->and(DB::table('wake_event_locators')->where('event_id', $eventId)->count())->toBe(1)
             ->and(DB::table('wake_error_events')->where('event_id', $eventId)->count())->toBe(1)
             ->and(DB::table('wake_hourly_counts')->value('count'))->toBe(1)
@@ -214,6 +215,6 @@ function waitForRealFlushFiles(array $files): void
         if (microtime(true) >= $deadline) {
             throw new RuntimeException('Timed out waiting for real flush workers.');
         }
-        usleep(1_000);
+        Sleep::usleep(1_000);
     }
 }

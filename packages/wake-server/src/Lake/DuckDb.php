@@ -9,7 +9,7 @@ use RuntimeException;
 use SensitiveParameter;
 use Symfony\Component\Process\Process;
 
-final class DuckDb implements LakeMaintenance, LakeWriter
+final class DuckDb implements LakeMaintenance, LakeReader, LakeWriter
 {
     public const int MAX_INSERT_ROWS = 100_000;
 

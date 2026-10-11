@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\DB;
 
 final readonly class RetainLogs
 {
-    public function __construct(private LakeMaintenance $lake) {}
+    public function __construct(private LakeMaintenance $lake, private LakeWriterLock $lock) {}
 
     /** @return array{cutoff: string, lake_rows: int, locators: int, hourly: int, errors: int} */
     public function run(?int $days = null): array
@@ -18,6 +18,17 @@ final readonly class RetainLogs
         $retentionDays = max(1, $days ?? (is_int($configuredDays) ? $configuredDays : 30));
         $maintenanceAt = CarbonImmutable::now('UTC');
         $cutoff = $maintenanceAt->startOfDay()->subDays($retentionDays);
+        $result = ['cutoff' => $cutoff->toDateString(), 'lake_rows' => 0, 'locators' => 0, 'hourly' => 0, 'errors' => 0];
+        $this->lock->execute(function () use ($cutoff, $maintenanceAt, &$result): void {
+            $result = $this->runLocked($cutoff, $maintenanceAt);
+        });
+
+        return $result;
+    }
+
+    /** @return array{cutoff: string, lake_rows: int, locators: int, hourly: int, errors: int} */
+    private function runLocked(CarbonImmutable $cutoff, CarbonImmutable $maintenanceAt): array
+    {
         $lakeRows = $this->lake->deleteBefore($cutoff);
         $locators = $hourly = $errors = 0;
         DB::transaction(function () use ($cutoff, &$locators, &$hourly, &$errors): void {

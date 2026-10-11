@@ -57,19 +57,19 @@ printf '%s' "$input" | grep -q 'exception JSON'
 printf '%s' "$input" | grep -q 'PARTITIONED BY (event_date)'
 printf '%s' "$input" | grep -q 'SORTED BY (app_id ASC, occurred_at ASC)'
 printf '%s' "$input" | grep -q "target_file_size', '32MB'"
+if printf '%s' "$input" | grep -q 'lake.flush_manifest'; then exit 1; fi
 printf '%s\n' '{"marker":"__WAKE_RESULT_START__"}' '{"marker":"__WAKE_RESULT_END__"}'
 SH);
 
     (new DuckDb)->bootstrap();
 })->throwsNoExceptions();
 
-it('commits lake rows and the batch marker in one bounded transaction', function (): void {
+it('commits one bounded batch transaction without a lake-side manifest', function (): void {
     file_put_contents($this->binary, <<<'SH'
 #!/bin/sh
 input="$(cat)"
 printf '%s' "$input" | grep -q 'BEGIN TRANSACTION'
-printf '%s' "$input" | grep -q 'INSERT INTO lake.flush_manifest'
-printf '%s' "$input" | grep -q 'WHERE NOT EXISTS (SELECT 1 FROM lake.flush_manifest'
+if printf '%s' "$input" | grep -q 'lake.flush_manifest'; then exit 1; fi
 printf '%s' "$input" | grep -q 'COMMIT;'
 printf '%s\n' '{"marker":"__WAKE_RESULT_START__"}' '{"marker":"__WAKE_RESULT_END__"}'
 SH);

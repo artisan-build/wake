@@ -5,6 +5,7 @@ declare(strict_types=1);
 use ArtisanBuild\WakeContracts\Enums\StagingBatchStatus;
 use ArtisanBuild\WakeServer\Lake\FlushLogBatches;
 use ArtisanBuild\WakeServer\Lake\LakeWriter;
+use ArtisanBuild\WakeServer\Lake\LakeWriterLock;
 use Illuminate\Foundation\Testing\DatabaseMigrations;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -39,10 +40,20 @@ final class MemoryLakeWriter implements LakeWriter
     }
 }
 
+final class ImmediateLakeWriterLock implements LakeWriterLock
+{
+    public function execute(Closure $operation): bool
+    {
+        $operation();
+
+        return true;
+    }
+}
+
 it('returns before starting DuckDB when no batches are claimed', function (): void {
     $lake = new MemoryLakeWriter;
 
-    expect((new FlushLogBatches($lake))->run())->toBe(['batches' => 0, 'rows' => 0])
+    expect((new FlushLogBatches($lake, new ImmediateLakeWriterLock))->run())->toBe(['batches' => 0, 'rows' => 0])
         ->and($lake->bootstraps)->toBe(0);
 });
 
@@ -53,7 +64,7 @@ it('claims on PostgreSQL with skip locked', function (): void {
         $queries[] = strtolower($query->sql);
     });
 
-    (new FlushLogBatches(new MemoryLakeWriter))->run(1);
+    (new FlushLogBatches(new MemoryLakeWriter, new ImmediateLakeWriterLock))->run(1);
 
     expect(DB::getDriverName())->toBe('pgsql')
         ->and(collect($queries)->contains(fn (string $sql): bool => str_contains($sql, 'for update skip locked')))->toBeTrue();
@@ -70,7 +81,7 @@ it('does not overlap a batch locked by another PostgreSQL worker', function (): 
     $lake = new MemoryLakeWriter;
     try {
         DB::setDefaultConnection('pgsql_worker');
-        (new FlushLogBatches($lake))->run(1);
+        (new FlushLogBatches($lake, new ImmediateLakeWriterLock))->run(1);
     } finally {
         DB::setDefaultConnection('pgsql');
         $primary->rollBack();
@@ -91,16 +102,16 @@ it('converges after each deterministic crash point', function (string $crashPoin
         }
     };
 
-    expect(fn () => (new FlushLogBatches($lake, $fault))->run(1))->toThrow(RuntimeException::class);
+    expect(fn () => (new FlushLogBatches($lake, new ImmediateLakeWriterLock, $fault))->run(1))->toThrow(RuntimeException::class);
     DB::table('wake_staging_batches')->where('batch_id', $batchId)->update(['claimed_at' => now()->subMinutes(6)]);
-    (new FlushLogBatches($lake))->run(1);
+    (new FlushLogBatches($lake, new ImmediateLakeWriterLock))->run(1);
 
     expect($lake->events[$eventId])->toBe(1)
         ->and(DB::table('wake_event_locators')->where('event_id', $eventId)->count())->toBe(1)
         ->and(DB::table('wake_error_events')->where('event_id', $eventId)->count())->toBe(1)
         ->and(DB::table('wake_hourly_counts')->value('count'))->toBe(1)
         ->and(DB::table('wake_connected_apps')->value('flushed_rows'))->toBe(1)
-        ->and(DB::table('wake_flush_manifest')->where('batch_id', $batchId)->where('derived_completed', true)->count())->toBe(1)
+        ->and(DB::table('wake_flush_batches')->where('batch_id', $batchId)->value('state'))->toBe('done')
         ->and(DB::table('wake_staging_batches')->where('batch_id', $batchId)->value('status'))->toBe(StagingBatchStatus::Flushed->value)
         ->and(DB::table('wake_staging_batches')->where('batch_id', $batchId)->value('payload'))->toBeNull();
 })->with(['after lake transaction' => 'after_lake_commit', 'before PostgreSQL commit' => 'before_derived_commit']);

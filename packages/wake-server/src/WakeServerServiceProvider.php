@@ -11,6 +11,8 @@ use ArtisanBuild\WakeServer\Console\Commands\RetainLogs;
 use ArtisanBuild\WakeServer\Lake\DuckDb;
 use ArtisanBuild\WakeServer\Lake\LakeMaintenance;
 use ArtisanBuild\WakeServer\Lake\LakeWriter;
+use ArtisanBuild\WakeServer\Lake\LakeWriterLock;
+use ArtisanBuild\WakeServer\Lake\PostgresLakeWriterLock;
 use Illuminate\Support\ServiceProvider;
 
 final class WakeServerServiceProvider extends ServiceProvider
@@ -20,6 +22,7 @@ final class WakeServerServiceProvider extends ServiceProvider
         $this->mergeConfigFrom(__DIR__.'/../config/wake-server.php', 'wake-server');
         $this->app->singleton(LakeWriter::class, DuckDb::class);
         $this->app->singleton(LakeMaintenance::class, DuckDb::class);
+        $this->app->singleton(LakeWriterLock::class, PostgresLakeWriterLock::class);
     }
 
     public function boot(): void

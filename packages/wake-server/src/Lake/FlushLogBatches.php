@@ -14,10 +14,25 @@ use Illuminate\Support\Facades\DB;
 final class FlushLogBatches
 {
     /** @param null|Closure(string, string): void $fault */
-    public function __construct(private readonly LakeWriter $lake, private readonly ?Closure $fault = null) {}
+    public function __construct(
+        private readonly LakeWriter $lake,
+        private readonly LakeWriterLock $lock,
+        private readonly ?Closure $fault = null,
+    ) {}
 
     /** @return array{batches: int, rows: int} */
     public function run(?int $limit = null): array
+    {
+        $result = ['batches' => 0, 'rows' => 0];
+        $this->lock->execute(function () use ($limit, &$result): void {
+            $result = $this->runLocked($limit);
+        });
+
+        return $result;
+    }
+
+    /** @return array{batches: int, rows: int} */
+    private function runLocked(?int $limit): array
     {
         StagingBatch::query()->where('status', StagingBatchStatus::Flushing)
             ->where('claimed_at', '<', now()->subMinutes(5))
@@ -35,6 +50,11 @@ final class FlushLogBatches
         foreach ($batches as $batch) {
             $events = $this->events($batch);
             $this->lake->commitBatch((string) $batch->batch_id, $events);
+            DB::table('wake_flush_batches')->where('batch_id', $batch->batch_id)->update([
+                'state' => FlushBatchState::LakeCommitted->value,
+                'lake_committed_at' => now(),
+                'updated_at' => now(),
+            ]);
             $this->hit('after_lake_commit', (string) $batch->batch_id);
             $this->complete($batch, $events);
             $rows += count($events);
@@ -52,6 +72,15 @@ final class FlushLogBatches
                 ->oldest('created_at')->limit(max(1, $limit))->lock('FOR UPDATE SKIP LOCKED')->get();
             foreach ($claimed as $batch) {
                 $batch->forceFill(['status' => StagingBatchStatus::Flushing, 'claimed_at' => now()])->save();
+                DB::table('wake_flush_batches')->insertOrIgnore([
+                    'batch_id' => $batch->batch_id,
+                    'staging_batch_ids' => json_encode([(string) $batch->batch_id], JSON_THROW_ON_ERROR),
+                    'event_days' => json_encode($this->eventDays($batch), JSON_THROW_ON_ERROR),
+                    'state' => FlushBatchState::Claimed->value,
+                    'claimed_at' => now(),
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
             }
 
             return $claimed;
@@ -97,12 +126,8 @@ final class FlushLogBatches
     private function complete(StagingBatch $batch, array $events): void
     {
         DB::transaction(function () use ($batch, $events): void {
-            DB::table('wake_flush_manifest')->insertOrIgnore([
-                'batch_id' => $batch->batch_id, 'lake_completed' => true, 'derived_completed' => false,
-                'created_at' => now(), 'updated_at' => now(),
-            ]);
-            $manifest = DB::table('wake_flush_manifest')->where('batch_id', $batch->batch_id)->lockForUpdate()->first();
-            if ((bool) ($manifest->derived_completed ?? false)) {
+            $manifest = DB::table('wake_flush_batches')->where('batch_id', $batch->batch_id)->lockForUpdate()->first();
+            if (($manifest->state ?? null) === FlushBatchState::Done->value) {
                 return;
             }
 
@@ -136,7 +161,7 @@ final class FlushLogBatches
             }
             DB::table('wake_connected_apps')->where('id', $batch->app_id)->increment('flushed_rows', count($events), ['last_flushed_at' => now()]);
             $this->hit('before_derived_commit', (string) $batch->batch_id);
-            DB::table('wake_flush_manifest')->where('batch_id', $batch->batch_id)->update(['lake_completed' => true, 'derived_completed' => true, 'completed_at' => now(), 'updated_at' => now()]);
+            DB::table('wake_flush_batches')->where('batch_id', $batch->batch_id)->update(['state' => FlushBatchState::Done->value, 'done_at' => now(), 'updated_at' => now()]);
             StagingBatch::query()->whereKey($batch->batch_id)->update(['payload' => null, 'status' => StagingBatchStatus::Flushed, 'flushed_at' => now(), 'claimed_at' => null]);
         }, 3);
     }
@@ -144,6 +169,17 @@ final class FlushLogBatches
     private function hit(string $point, string $batchId): void
     {
         ($this->fault)?->__invoke($point, $batchId);
+    }
+
+    /** @return list<string> */
+    private function eventDays(StagingBatch $batch): array
+    {
+        $days = [];
+        foreach ($this->events($batch) as $event) {
+            $days[] = Carbon::parse($this->eventString($event, 'occurred_at'))->utc()->toDateString();
+        }
+
+        return array_values(array_unique($days));
     }
 
     /** @param array<string, mixed> $event */

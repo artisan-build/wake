@@ -61,10 +61,6 @@ final class DuckDb implements LakeMaintenance, LakeWriter
             ALTER TABLE lake.logs SET PARTITIONED BY (event_date);
             ALTER TABLE lake.logs SET SORTED BY (app_id ASC, occurred_at ASC);
             CALL lake.set_option('target_file_size', '32MB', table_name => 'logs');
-            CREATE TABLE IF NOT EXISTS lake.flush_manifest (
-                batch_id VARCHAR PRIMARY KEY,
-                committed_at TIMESTAMPTZ NOT NULL
-            );
             SQL, 60);
     }
 
@@ -76,10 +72,9 @@ final class DuckDb implements LakeMaintenance, LakeWriter
         }
 
         $values = array_map(fn (array $row): string => $this->rowSql($batchId, $row), $rows);
-        $batch = $this->literal($batchId);
-        $insert = $values === [] ? '' : 'INSERT INTO lake.logs SELECT * FROM (VALUES '.implode(",\n", $values).') AS incoming(batch_id,event_id,app_id,event_date,occurred_at,level,channel,message,context,extra,exception,environment,hostname,correlation_id,ingested_at) WHERE NOT EXISTS (SELECT 1 FROM lake.flush_manifest WHERE batch_id = '.$batch.');';
+        $insert = $values === [] ? '' : 'INSERT INTO lake.logs VALUES '.implode(",\n", $values).';';
 
-        $this->query("BEGIN TRANSACTION;\n{$insert}\nINSERT INTO lake.flush_manifest SELECT {$batch}, now() WHERE NOT EXISTS (SELECT 1 FROM lake.flush_manifest WHERE batch_id = {$batch});\nCOMMIT;", 120);
+        $this->query("BEGIN TRANSACTION;\n{$insert}\nCOMMIT;", 120);
     }
 
     public function compact(): array

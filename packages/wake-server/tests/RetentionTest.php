@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use ArtisanBuild\WakeServer\Lake\LakeMaintenance;
+use ArtisanBuild\WakeServer\Lake\LakeWriterLock;
 use ArtisanBuild\WakeServer\Lake\RetainLogs;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Schema\Blueprint;
@@ -46,6 +47,21 @@ final class RecordingLakeMaintenance implements LakeMaintenance
     }
 }
 
+final class ImmediateRetentionLock implements LakeWriterLock
+{
+    public function __construct(private readonly bool $acquired = true) {}
+
+    public function execute(Closure $operation): bool
+    {
+        if (! $this->acquired) {
+            return false;
+        }
+        $operation();
+
+        return true;
+    }
+}
+
 beforeEach(function (): void {
     Schema::create('wake_event_locators', function (Blueprint $table): void {
         $table->string('event_id');
@@ -61,6 +77,14 @@ beforeEach(function (): void {
     CarbonImmutable::setTestNow('2026-10-11 15:30:00 UTC');
 });
 
+it('skips every retention write when the shared lake lock is held', function (): void {
+    $lake = new RecordingLakeMaintenance;
+
+    expect((new RetainLogs($lake, new ImmediateRetentionLock(false)))->run())->toBe([
+        'cutoff' => '2026-09-11', 'lake_rows' => 0, 'locators' => 0, 'hourly' => 0, 'errors' => 0,
+    ])->and($lake->calls)->toBe([]);
+});
+
 afterEach(function (): void {
     CarbonImmutable::setTestNow();
     Schema::dropAllTables();
@@ -74,7 +98,7 @@ it('uses a whole-day default cutoff and prunes only older derived rows', functio
     }
     $lake = new RecordingLakeMaintenance;
 
-    $result = (new RetainLogs($lake))->run();
+    $result = (new RetainLogs($lake, new ImmediateRetentionLock))->run();
 
     expect($result)->toBe([
         'cutoff' => '2026-09-11', 'lake_rows' => 2, 'locators' => 1, 'hourly' => 1, 'errors' => 1,

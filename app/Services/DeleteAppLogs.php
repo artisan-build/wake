@@ -37,11 +37,11 @@ final readonly class DeleteAppLogs
     }
 
     /** @return array{lake_rows: int, locators: int, hourly_groups: int, hourly_events: int, errors: int, staging_batches: int, staging_rows: int, manifests_reconciled: int} */
-    public function run(string $appId): array
+    public function run(string $appId, ?Closure $audit = null): array
     {
         $appId = $this->appId($appId);
         $result = null;
-        $acquired = $this->lock->execute(function () use ($appId, &$result): void {
+        $acquired = $this->lock->execute(function () use ($appId, $audit, &$result): void {
             $barrier = DB::transaction(function () use ($appId): array {
                 $app = DB::table('wake_connected_apps')->where('id', $appId)->lockForUpdate()->first(['id']);
                 if ($app === null) {
@@ -53,11 +53,12 @@ final readonly class DeleteAppLogs
             $this->hit('after_staging_barrier', $appId);
             $lakeRows = $this->lake->deleteAppRows($appId);
             $this->hit('after_lake_delete', $appId);
-            $derived = DB::transaction(function () use ($appId): array {
+            $derived = DB::transaction(function () use ($appId, $audit): array {
                 $counts = $this->counts($appId, 0);
                 $counts['locators'] = DB::table('wake_event_locators')->where('app_id', $appId)->delete();
                 $counts['hourly_groups'] = DB::table('wake_hourly_counts')->where('app_id', $appId)->delete();
                 $counts['errors'] = DB::table('wake_error_events')->where('app_id', $appId)->delete();
+                $audit?->__invoke();
                 $this->hit('before_postgres_commit', $appId);
 
                 return $counts;

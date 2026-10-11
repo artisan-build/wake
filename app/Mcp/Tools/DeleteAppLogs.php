@@ -4,6 +4,11 @@ declare(strict_types=1);
 
 namespace App\Mcp\Tools;
 
+use App\Audit\WakeAction;
+use App\Services\DeleteAppLogs as DeleteAppLogsService;
+use ArtisanBuild\BuiltForCloud\Audit\AppActionActor;
+use ArtisanBuild\BuiltForCloud\Audit\AppActionReason;
+use ArtisanBuild\BuiltForCloud\Audit\AppActionRecorder;
 use ArtisanBuild\BuiltForCloud\Mcp\AdvertisesToolClassification;
 use ArtisanBuild\BuiltForCloud\Mcp\AdvertisesToolEffect;
 use ArtisanBuild\BuiltForCloud\Mcp\Classification;
@@ -28,20 +33,38 @@ final class DeleteAppLogs extends WakeTool
 
     public function schema(JsonSchema $schema): array
     {
-        return ['app' => $schema->string()->min(1)->required()];
+        return ['app' => $schema->string()->min(1)->max(255)->required()];
     }
 
     public function preview(Request $request): Response
     {
         $this->authorize();
+        $app = $this->app($request);
 
-        return Response::error('The delete_app_logs preview is not available yet.');
+        return Response::json(resolve(DeleteAppLogsService::class)->preview($app));
     }
 
     public function handle(Request $request): Response
     {
-        $this->authorize();
+        $principal = $this->authorize();
+        $app = $this->app($request);
+        $service = resolve(DeleteAppLogsService::class);
+        $recorder = resolve(AppActionRecorder::class);
+        $actor = AppActionActor::fromActingPrincipal($principal);
 
-        return Response::error('The delete_app_logs operation is not available yet.');
+        return Response::json($service->run($app, static fn () => $recorder->record(
+            action: WakeAction::AppLogsDeleted,
+            actor: $actor,
+            reason: AppActionReason::Requested,
+        )));
+    }
+
+    private function app(Request $request): string
+    {
+        $validated = $this->validate($request, [
+            'app' => ['required', 'string', 'min:1', 'max:255'],
+        ], ['app']);
+
+        return (string) $validated['app'];
     }
 }

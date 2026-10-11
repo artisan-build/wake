@@ -8,6 +8,7 @@ use ArtisanBuild\WakeClient\Filters\PassThroughPayloadFilter;
 use ArtisanBuild\WakeClient\Logging\LifecycleRegistrar;
 use ArtisanBuild\WakeClient\Logging\WakeHandler;
 use ArtisanBuild\WakeClient\Transport\HttpTransport;
+use ArtisanBuild\WakeContracts\ExceptionData;
 use ArtisanBuild\WakeContracts\LogEvent;
 use Illuminate\Console\Events\CommandFinished;
 use Illuminate\Console\OutputStyle;
@@ -93,6 +94,77 @@ it('carries failed rows and filtered drops until one valid acceptance', function
 
     $drops = collect(Http::recorded())->map(fn (array $pair): int => $pair[0]->data()['dropped_count'])->all();
     expect($drops)->toBe([1, 3, 0]);
+});
+
+it('carries exact buffer overflow debt through one accepted envelope', function (): void {
+    config()->set(['wake.batch_size' => 3, 'wake.max_buffer' => 2]);
+    Http::fakeSequence()
+        ->push(receipt(2), 202)
+        ->push(receipt(1), 202);
+    $handler = app(WakeHandler::class);
+
+    $handler->handle(deliveryRecord('buffered-1'));
+    $handler->handle(deliveryRecord('buffered-2'));
+    $handler->handle(deliveryRecord('overflow'));
+    expect($handler->state())->toBe(['buffered' => 2, 'dropped' => 1]);
+
+    expect($handler->flush())->toBeTrue();
+    $handler->handle(deliveryRecord('after-overflow'));
+    expect($handler->flush())->toBeTrue();
+
+    $requests = Http::recorded()->map(fn (array $pair): array => $pair[0]->data())->all();
+    expect($requests[0]['dropped_count'])->toBe(1)
+        ->and($requests[0]['rows'])->toHaveCount(2)
+        ->and($requests[1]['dropped_count'])->toBe(0)
+        ->and($requests[1]['rows'])->toHaveCount(1);
+});
+
+it('removes a rebound-filtered secret from the raw request body', function (): void {
+    $secret = 'wake-test-secret-7f1d3';
+    $marker = '[filtered]';
+    app()->instance(PayloadFilter::class, new class($marker) implements PayloadFilter
+    {
+        public function __construct(private readonly string $marker) {}
+
+        public function filter(LogEvent $event): LogEvent
+        {
+            return new LogEvent(
+                eventId: $event->eventId,
+                occurredAt: $event->occurredAt,
+                level: $event->level,
+                channel: $event->channel,
+                message: $this->marker,
+                context: ['token' => $this->marker, 'nested' => ['secret' => $this->marker]],
+                extra: ['credential' => $this->marker],
+                exception: new ExceptionData(
+                    class: RuntimeException::class,
+                    message: $this->marker,
+                    file: __FILE__,
+                    line: __LINE__,
+                    trace: $this->marker,
+                ),
+                environment: $event->environment,
+                hostname: $event->hostname,
+                correlationId: $event->correlationId,
+            );
+        }
+    });
+    app()->forgetInstance(WakeHandler::class);
+    Http::fake(['*' => Http::response(receipt(1), 202)]);
+    $handler = app(WakeHandler::class);
+    $handler->handle(new LogRecord(
+        new DateTimeImmutable,
+        'app',
+        Level::Error,
+        $secret,
+        ['token' => $secret, 'nested' => ['secret' => $secret], 'exception' => new RuntimeException($secret)],
+        ['credential' => $secret],
+    ));
+    $handler->flush();
+
+    $request = Http::recorded()->first()[0];
+    expect($request->body())->toContain($marker)
+        ->not->toContain($secret);
 });
 
 it('swallows transport failures and prevents recursive enqueueing', function (): void {

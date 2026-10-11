@@ -17,6 +17,8 @@
         "php": "^8.3",
         "artisan-build/wake-contracts": "^0.1",
         "illuminate/contracts": "^13.0",
+        "illuminate/http": "^13.0",
+        "illuminate/log": "^13.0",
         "illuminate/support": "^13.0"
     },
     "require-dev": {

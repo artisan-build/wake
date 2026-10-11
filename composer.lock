@@ -292,11 +292,13 @@
             "dist": {
                 "type": "path",
                 "url": "packages/wake-client",
-                "reference": "21e26904addedcc6c2035f3c016bb852020881e5"
+                "reference": "0766c0ee5b7a294e131d4b09b4665fb6ffe43693"
             },
             "require": {
                 "artisan-build/wake-contracts": "^0.1",
                 "illuminate/contracts": "^13.0",
+                "illuminate/http": "^13.0",
+                "illuminate/log": "^13.0",
                 "illuminate/support": "^13.0",
                 "php": "^8.3"
             },

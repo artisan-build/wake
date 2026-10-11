@@ -58,6 +58,51 @@ it('bootstraps real DuckLake on PostgreSQL and replays one batch without duplica
     expect($result[0]['rows'] ?? null)->toBe(1);
 });
 
+it('keeps the UTC day stable for storage replay detection and retention under a non UTC host timezone', function (): void {
+    expect(is_executable(base_path('bin/duckdb')))->toBeTrue('Run scripts/install-duckdb.sh before the root test lane.');
+    $previousPhpTimezone = date_default_timezone_get();
+    $previousEnvironmentTimezone = getenv('TZ');
+    putenv('TZ=Europe/Zurich');
+    date_default_timezone_set('Europe/Zurich');
+
+    try {
+        $lake = resolve(DuckDb::class);
+        $batchId = (string) Str::ulid();
+        $row = [
+            'event_id' => (string) Str::ulid(), 'app_id' => 'utc-boundary-app',
+            'occurred_at' => '2026-10-11T23:30:00.000000Z', 'level' => 'error',
+            'channel' => 'app', 'message' => 'utc boundary', 'context' => [], 'extra' => [],
+            'exception' => null, 'environment' => 'testing', 'hostname' => 'localhost', 'correlation_id' => null,
+        ];
+
+        $lake->bootstrap();
+        $lake->commitBatch($batchId, [$row]);
+        $stored = $lake->query('SELECT CAST(event_date AS VARCHAR) AS event_date FROM lake.logs WHERE batch_id = '.$lake->literal($batchId).';');
+        $detected = $lake->batchCommitted($batchId, ['2026-10-11']);
+        $deleted = $lake->deleteBefore(new DateTimeImmutable('2026-10-12T00:00:00Z'));
+        $remaining = realLakeBatchRows($lake, $batchId);
+
+        expect([
+            'event_date' => $stored[0]['event_date'] ?? null,
+            'detected_on_utc_day' => $detected,
+            'deleted_at_utc_cutoff' => $deleted,
+            'remaining' => $remaining,
+        ])->toBe([
+            'event_date' => '2026-10-11',
+            'detected_on_utc_day' => true,
+            'deleted_at_utc_cutoff' => 1,
+            'remaining' => 0,
+        ]);
+    } finally {
+        if ($previousEnvironmentTimezone === false) {
+            putenv('TZ');
+        } else {
+            putenv('TZ='.$previousEnvironmentTimezone);
+        }
+        date_default_timezone_set($previousPhpTimezone);
+    }
+});
+
 it('converges exactly once after a real lake commit crash', function (): void {
     expect(is_executable(base_path('bin/duckdb')))->toBeTrue('Run scripts/install-duckdb.sh before the root test lane.');
     [$batchId, $eventId] = seedRealFlushBatch();

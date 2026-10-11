@@ -35,3 +35,18 @@ it('creates the authoritative PostgreSQL flush batch manifest and enum', functio
         'claimed_at' => now(), 'created_at' => now(), 'updated_at' => now(),
     ]))->toThrow(QueryException::class);
 });
+
+it('indexes recent errors for both global and per app newest first reads', function (): void {
+    $definitions = DB::table('pg_indexes')
+        ->where('schemaname', 'public')
+        ->where('tablename', 'wake_error_events')
+        ->pluck('indexdef')
+        ->map(static fn (string $definition): string => strtolower($definition));
+
+    expect($definitions->contains(
+        static fn (string $definition): bool => str_contains($definition, '(app_id, occurred_at)'),
+    ))->toBeTrue('The per-app occurred_at index must remain present.')
+        ->and($definitions->contains(
+            static fn (string $definition): bool => str_contains($definition, '(occurred_at)'),
+        ))->toBeTrue('A global occurred_at-led index is required for all-app newest-first reads.');
+});

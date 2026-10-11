@@ -3,9 +3,11 @@
 use ArtisanBuild\BuiltForCloud\SystemAuthoritySchedule;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Schedule;
 
-$schedule = app('Illuminate\\Console\\Scheduling\\Schedule');
-$authority = app(SystemAuthoritySchedule::class);
+/** @var Illuminate\Console\Scheduling\Schedule $schedule */
+$schedule = Schedule::getFacadeRoot();
+$authority = resolve(SystemAuthoritySchedule::class);
 
 $authority->call($schedule, static fn (): int => Artisan::call('wake:lake-flush'))
     ->everyMinute()->name('wake-lake-flush')->withoutOverlapping();

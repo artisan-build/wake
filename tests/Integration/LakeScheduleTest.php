@@ -17,7 +17,7 @@ it('registers lake commands and schedules app-instance maintenance without overl
     )->values();
 
     expect($events)->toHaveCount(3)
-        ->and(app(SystemAuthoritySchedule::class))->toBeInstanceOf(SystemAuthoritySchedule::class)
+        ->and(resolve(SystemAuthoritySchedule::class))->toBeInstanceOf(SystemAuthoritySchedule::class)
         ->and($events->every(fn (CallbackEvent $event): bool => $event->withoutOverlapping))->toBeTrue()
         ->and($events->pluck('description')->all())->toBe(['wake-lake-flush', 'wake-lake-compact', 'wake-lake-retain'])
         ->and($events->pluck('expression')->all())->toBe(['* * * * *', '15 3 * * *', '15 4 * * *']);

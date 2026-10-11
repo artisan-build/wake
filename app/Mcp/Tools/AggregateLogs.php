@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Mcp\Tools;
 
+use App\Services\WakeQueries;
 use ArtisanBuild\BuiltForCloud\Mcp\AdvertisesToolClassification;
 use ArtisanBuild\BuiltForCloud\Mcp\AdvertisesToolEffect;
 use ArtisanBuild\BuiltForCloud\Mcp\Classification;
@@ -26,13 +27,23 @@ final class AggregateLogs extends WakeTool
 
     public function schema(JsonSchema $schema): array
     {
-        return ['app' => $schema->string()->min(1), 'all_apps' => $schema->boolean(), 'environment' => $schema->string(), 'level' => $schema->string(), 'from' => $schema->string(), 'to' => $schema->string(), 'group_by' => $schema->array()->items($schema->string())];
+        return ['app' => $schema->string()->min(1)->max(255), 'all_apps' => $schema->boolean(), 'environment' => $schema->string()->min(1)->max(255), 'level' => $schema->string()->min(1)->max(20), 'from' => $schema->string()->required(), 'to' => $schema->string()->required(), 'group_by' => $schema->array()->min(1)->max(4)->items($schema->string()->enum(['hour', 'app', 'environment', 'level']))];
     }
 
     public function handle(Request $request): Response
     {
         $this->authorize();
+        $validated = $this->validateScoped($request, [
+            'app' => ['nullable', 'string', 'min:1', 'max:255'],
+            'all_apps' => ['nullable', 'boolean'],
+            'environment' => ['nullable', 'string', 'min:1', 'max:255'],
+            'level' => ['nullable', 'string', 'min:1', 'max:20'],
+            'from' => ['required', 'date'],
+            'to' => ['required', 'date', 'after_or_equal:from'],
+            'group_by' => ['nullable', 'array', 'min:1', 'max:4'],
+            'group_by.*' => ['string', 'in:hour,app,environment,level'],
+        ], ['app', 'all_apps', 'environment', 'level', 'from', 'to', 'group_by']);
 
-        return Response::error('The aggregate_logs query is not available yet.');
+        return Response::json(resolve(WakeQueries::class)->aggregate($validated));
     }
 }

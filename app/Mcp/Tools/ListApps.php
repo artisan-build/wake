@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Mcp\Tools;
 
+use App\Services\WakeQueries;
 use ArtisanBuild\BuiltForCloud\Mcp\AdvertisesToolClassification;
 use ArtisanBuild\BuiltForCloud\Mcp\AdvertisesToolEffect;
 use ArtisanBuild\BuiltForCloud\Mcp\Classification;
@@ -26,13 +27,17 @@ final class ListApps extends WakeTool
 
     public function schema(JsonSchema $schema): array
     {
-        return ['app' => $schema->string()->min(1), 'all_apps' => $schema->boolean()];
+        return ['app' => $schema->string()->min(1)->max(255), 'all_apps' => $schema->boolean()];
     }
 
     public function handle(Request $request): Response
     {
         $this->authorize();
+        $validated = $this->validateScoped($request, [
+            'app' => ['nullable', 'string', 'min:1', 'max:255'],
+            'all_apps' => ['nullable', 'boolean'],
+        ], ['app', 'all_apps']);
 
-        return Response::error('The list_apps query is not available yet.');
+        return Response::json(resolve(WakeQueries::class)->listApps($validated));
     }
 }

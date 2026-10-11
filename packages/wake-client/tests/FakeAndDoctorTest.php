@@ -26,6 +26,27 @@ it('provides a public fake that captures the normal envelope path without HTTP',
     Http::assertNothingSent();
 });
 
+it('rebuilds a previously resolved wake channel around the fake handler', function (): void {
+    config()->set([
+        'wake.url' => 'https://wake.test',
+        'wake.token' => 'synthetic-token',
+        'wake.batch_size' => 1,
+    ]);
+    app()->forgetInstance(Transport::class);
+    app()->forgetInstance(WakeHandler::class);
+    $logs = app('log');
+    $logs->forgetChannel('wake');
+    $logs->channel('wake');
+    Http::preventStrayRequests();
+
+    $fake = Wake::fake();
+    $logs->channel('wake')->info('captured-after-fake');
+    app(WakeHandler::class)->flush();
+
+    Http::assertNothingSent();
+    $fake->assertSentCount(1);
+});
+
 it('doctor succeeds only for a valid accepted round trip without printing the token', function (): void {
     config()->set(['wake.url' => 'https://wake.test', 'wake.token' => 'doctor-secret']);
     app()->forgetInstance(WakeHandler::class);

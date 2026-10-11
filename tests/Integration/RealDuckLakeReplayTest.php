@@ -8,18 +8,20 @@ use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
 
 beforeEach(function (): void {
-    clearRealDuckLakeCatalog();
     $this->catalogId = 'wake_lake_'.strtolower((string) Str::ulid());
     $this->dataPath = storage_path('framework/testing/ducklake/'.$this->catalogId.'/');
+    DB::statement('CREATE SCHEMA "'.$this->catalogId.'"');
     File::ensureDirectoryExists($this->dataPath);
     config()->set('wake-server.lake.postgres_catalog', true);
+    config()->set('wake-server.lake.metadata_schema', $this->catalogId);
     config()->set('wake-server.lake.data_path', $this->dataPath);
 });
 
 afterEach(function (): void {
     config()->set('wake-server.lake.postgres_catalog', false);
+    config()->set('wake-server.lake.metadata_schema');
     config()->set('wake-server.lake.data_path');
-    clearRealDuckLakeCatalog();
+    DB::statement('DROP SCHEMA IF EXISTS "'.$this->catalogId.'" CASCADE');
     File::deleteDirectory($this->dataPath);
 });
 
@@ -36,6 +38,7 @@ it('bootstraps real DuckLake on PostgreSQL and replays one batch without duplica
     ];
 
     $lake->bootstrap();
+    expect(DB::table('pg_catalog.pg_tables')->where('schemaname', $this->catalogId)->where('tablename', 'like', 'ducklake_%')->count())->toBeGreaterThan(0);
     expect($lake->batchCommitted($batchId, $days))->toBeFalse();
     $lake->commitBatch($batchId, [$row]);
     expect($lake->batchCommitted($batchId, $days))->toBeTrue();
@@ -46,15 +49,3 @@ it('bootstraps real DuckLake on PostgreSQL and replays one batch without duplica
 
     expect($result[0]['rows'] ?? null)->toBe(1);
 });
-
-function clearRealDuckLakeCatalog(): void
-{
-    $tables = DB::select("SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename LIKE 'ducklake_%'");
-    foreach ($tables as $table) {
-        $name = is_object($table) ? ($table->tablename ?? null) : null;
-        if (! is_string($name) || preg_match('/^ducklake_[a-z0-9_]+$/D', $name) !== 1) {
-            throw new RuntimeException('Unexpected DuckLake catalog table name.');
-        }
-        DB::statement('DROP TABLE IF EXISTS public."'.$name.'" CASCADE');
-    }
-}

@@ -48,6 +48,19 @@ SH);
         ->toThrow(RuntimeException::class, 'password=[REDACTED] SECRET \'[REDACTED]\'');
 });
 
+it('rejects an unsafe PostgreSQL metadata schema identifier', function (): void {
+    config()->set('wake-server.lake.postgres_catalog', true);
+    config()->set('wake-server.lake.metadata_schema', 'unsafe;drop');
+    config()->set('wake-server.lake.data_path', '/tmp/wake-lake-test/');
+    config()->set('database.connections.pgsql', [
+        'host' => '127.0.0.1', 'port' => 5432, 'database' => 'wake_test',
+        'username' => 'root', 'password' => '', 'sslmode' => 'prefer',
+    ]);
+
+    expect(fn () => (new DuckDb)->query('SELECT 1'))
+        ->toThrow(RuntimeException::class, 'metadata schema is invalid');
+});
+
 it('defines the full v1 lake schema and physical layout', function (): void {
     file_put_contents($this->binary, <<<'SH'
 #!/bin/sh

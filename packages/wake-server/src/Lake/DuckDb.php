@@ -147,6 +147,7 @@ final class DuckDb implements LakeMaintenance, LakeWriter
         $disk = config('filesystems.disks.s3');
         $settings = 'SET threads=1; SET memory_limit='.$this->literal('384MB').'; SET preserve_insertion_order=false; SET autoinstall_known_extensions=false; SET autoload_known_extensions=false;';
         $extensions = 'SET extension_directory='.$this->literal($this->configString('wake-server.lake.extension_directory')).'; LOAD ducklake; LOAD postgres; LOAD httpfs;';
+        $metadataSchema = $this->metadataSchemaOption();
 
         if (config('wake-server.lake.postgres_catalog') === true) {
             if (! is_array($database) || empty($database['host'])) {
@@ -154,14 +155,14 @@ final class DuckDb implements LakeMaintenance, LakeWriter
             }
             $dsn = $this->postgresDsn($database, $this->scalarString($database['sslmode'] ?? 'prefer', 'database sslmode'));
 
-            return "{$settings} {$extensions} ATTACH ".$this->literal('ducklake:postgres:'.$dsn).' AS lake (DATA_PATH '.$this->literal($this->configString('wake-server.lake.data_path')).', DATA_INLINING_ROW_LIMIT 0);';
+            return "{$settings} {$extensions} ATTACH ".$this->literal('ducklake:postgres:'.$dsn).' AS lake (DATA_PATH '.$this->literal($this->configString('wake-server.lake.data_path')).", DATA_INLINING_ROW_LIMIT 0{$metadataSchema});";
         }
 
         if (! config('wake-server.lake.cloud') || ! is_array($database) || empty($database['host']) || ! is_array($disk) || empty($disk['bucket'])) {
             $catalog = 'ducklake:'.storage_path('app/ducklake/catalog.ducklake');
             $data = storage_path('app/ducklake/data/');
 
-            return "{$settings} {$extensions} ATTACH ".$this->literal($catalog).' AS lake (DATA_PATH '.$this->literal($data).', DATA_INLINING_ROW_LIMIT 0);';
+            return "{$settings} {$extensions} ATTACH ".$this->literal($catalog).' AS lake (DATA_PATH '.$this->literal($data).", DATA_INLINING_ROW_LIMIT 0{$metadataSchema});";
         }
 
         $endpoint = $this->scalarString($disk['endpoint'] ?? '', 'S3 endpoint');
@@ -178,7 +179,7 @@ final class DuckDb implements LakeMaintenance, LakeWriter
         $dsn = $this->postgresDsn($database);
         $data = 's3://'.$this->scalarString($disk['bucket'], 'S3 bucket').'/'.ltrim($this->configString('wake-server.lake.data_prefix'), '/');
 
-        return "{$settings} {$extensions} {$secret} ATTACH ".$this->literal('ducklake:postgres:'.$dsn).' AS lake (DATA_PATH '.$this->literal($data).', DATA_INLINING_ROW_LIMIT 0);';
+        return "{$settings} {$extensions} {$secret} ATTACH ".$this->literal('ducklake:postgres:'.$dsn).' AS lake (DATA_PATH '.$this->literal($data).", DATA_INLINING_ROW_LIMIT 0{$metadataSchema});";
     }
 
     /** @param array<mixed> $database */
@@ -193,6 +194,19 @@ final class DuckDb implements LakeMaintenance, LakeWriter
             $this->scalarString($database['password'] ?? '', 'database password'),
             $sslmode,
         );
+    }
+
+    private function metadataSchemaOption(): string
+    {
+        $schema = config('wake-server.lake.metadata_schema');
+        if ($schema === null || $schema === '') {
+            return '';
+        }
+        if (! is_string($schema) || preg_match('/^[a-z][a-z0-9_]*$/D', $schema) !== 1) {
+            throw new RuntimeException('The DuckLake metadata schema is invalid.');
+        }
+
+        return ', METADATA_SCHEMA '.$this->literal($schema);
     }
 
     private function process(string $format): Process

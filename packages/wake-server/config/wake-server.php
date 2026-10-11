@@ -9,6 +9,7 @@ return [
         'extension_directory' => base_path('var/duckdb-extensions'),
         'data_prefix' => 'ducklake/logs/',
         'postgres_catalog' => false,
+        'metadata_schema' => null,
         'data_path' => null,
         'threads' => 1,
         'memory_limit' => '384MB',

@@ -30,6 +30,8 @@ final readonly class RecordNormalizer
         $context = $record->context;
         $throwable = $context['exception'] ?? null;
         unset($context['exception']);
+        $normalizedContext = $this->jsonObject($context);
+        $normalizedExtra = $this->jsonObject($record->extra);
 
         return new LogEvent(
             eventId: (string) Str::ulid(),
@@ -37,12 +39,12 @@ final readonly class RecordNormalizer
             level: LogLevel::from(strtolower($record->level->getName())),
             channel: $record->channel,
             message: $record->message,
-            context: $this->jsonObject($context),
-            extra: $this->jsonObject($record->extra),
+            context: $normalizedContext,
+            extra: $normalizedExtra,
             exception: $throwable instanceof Throwable ? $this->exception($throwable) : null,
             environment: $this->environment,
             hostname: $this->hostname,
-            correlationId: $this->correlations->resolve($record->context, $record->extra),
+            correlationId: $this->correlations->resolve($normalizedContext, $normalizedExtra),
         );
     }
 
@@ -57,11 +59,22 @@ final readonly class RecordNormalizer
         );
     }
 
-    /** @param array<string, mixed> $values @return array<string, mixed> */
+    /**
+     * @param  array<mixed, mixed>  $values
+     * @return array<string, mixed>
+     */
     private function jsonObject(array $values): array
     {
-        /** @var array<string, mixed> */
-        return $this->jsonSafe($values);
+        $result = [];
+        foreach ($values as $key => $value) {
+            if (! is_string($key)) {
+                throw new InvalidArgumentException('Wake payload object keys must be strings.');
+            }
+
+            $result[$key] = $this->jsonSafe($value);
+        }
+
+        return $result;
     }
 
     private function jsonSafe(mixed $value, int $depth = 0): mixed

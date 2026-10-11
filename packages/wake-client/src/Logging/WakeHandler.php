@@ -37,6 +37,7 @@ final class WakeHandler extends AbstractHandler
         parent::__construct();
     }
 
+    /** @phpstan-impure */
     public function handle(LogRecord $record): bool
     {
         if (! $this->configured() || $this->delivering) {
@@ -62,6 +63,7 @@ final class WakeHandler extends AbstractHandler
         return false;
     }
 
+    /** @phpstan-impure */
     public function flush(): bool
     {
         if ($this->buffer === [] || ! $this->configured() || $this->delivering) {

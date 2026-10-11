@@ -37,7 +37,7 @@ final class HttpTransport implements Transport
                 ->connectTimeout($this->connectTimeout)
                 ->timeout($this->timeout)
                 ->beforeSending(function ($request, array $options): void {
-                    $this->lastOptions = $options;
+                    $this->lastOptions = $this->stringKeyed($options);
                 })
                 ->withHeaders([IngestProtocol::IDEMPOTENCY_HEADER => $envelope->idempotencyKey])
                 ->post(rtrim($this->url, '/').IngestProtocol::PATH, $envelope->toArray());
@@ -46,7 +46,12 @@ final class HttpTransport implements Transport
                 return false;
             }
 
-            return AcceptedReceipt::fromArray($response->json())->acceptedCount === count($envelope->rows);
+            $body = $response->json();
+            if (! is_array($body)) {
+                return false;
+            }
+
+            return AcceptedReceipt::fromArray($this->stringKeyed($body))->acceptedCount === count($envelope->rows);
         } catch (Throwable) {
             return false;
         }
@@ -61,5 +66,23 @@ final class HttpTransport implements Transport
     public function attempts(): int
     {
         return $this->attempts;
+    }
+
+    /**
+     * Convert an arbitrary decoded/options array to a contract object.
+     *
+     * @param  array<mixed, mixed>  $values
+     * @return array<string, mixed>
+     */
+    private function stringKeyed(array $values): array
+    {
+        $result = [];
+        foreach ($values as $key => $value) {
+            if (is_string($key)) {
+                $result[$key] = $value;
+            }
+        }
+
+        return $result;
     }
 }

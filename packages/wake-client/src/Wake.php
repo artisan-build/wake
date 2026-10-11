@@ -7,6 +7,8 @@ namespace ArtisanBuild\WakeClient;
 use ArtisanBuild\WakeClient\Contracts\Transport;
 use ArtisanBuild\WakeClient\Logging\WakeHandler;
 use ArtisanBuild\WakeClient\Testing\WakeFake;
+use Illuminate\Log\LogManager;
+use LogicException;
 
 final class Wake
 {
@@ -16,7 +18,11 @@ final class Wake
         config()->set(['wake.url' => 'https://wake.fake', 'wake.token' => 'wake-fake']);
         app()->instance(Transport::class, $fake);
         app()->forgetInstance(WakeHandler::class);
-        app('log')->forgetChannel('wake');
+        $logs = app('log');
+        if (! $logs instanceof LogManager) {
+            throw new LogicException('Laravel log manager is unavailable.');
+        }
+        $logs->forgetChannel('wake');
 
         return $fake;
     }

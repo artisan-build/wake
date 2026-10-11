@@ -13,7 +13,10 @@ final readonly class CorrelationResolver
 
     public function __construct(private Container $container) {}
 
-    /** @param array<string, mixed> $context @param array<string, mixed> $extra */
+    /**
+     * @param  array<string, mixed>  $context
+     * @param  array<string, mixed>  $extra
+     */
     public function resolve(array $context, array $extra): ?string
     {
         foreach (self::KEYS as $key) {

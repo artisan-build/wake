@@ -1,0 +1,61 @@
+{
+    "$schema": "https://getcomposer.org/schema.json",
+    "name": "artisan-build/wake-server",
+    "version": "0.1.0",
+    "description": "The ingest, storage, and MCP server package for Wake.",
+    "keywords": ["laravel", "logs", "wake", "mcp"],
+    "license": "MIT",
+    "type": "library",
+    "repositories": [
+        {
+            "type": "path",
+            "url": "../wake-contracts",
+            "options": {"symlink": true}
+        }
+    ],
+    "require": {
+        "php": "^8.3",
+        "artisan-build/built-for-cloud": "^0.19.9",
+        "artisan-build/wake-contracts": "^0.1",
+        "illuminate/contracts": "^13.0",
+        "illuminate/database": "^13.0",
+        "illuminate/support": "^13.0",
+        "laravel/mcp": "^1.0"
+    },
+    "require-dev": {
+        "larastan/larastan": "^3.9",
+        "laravel/pint": "^1.27",
+        "orchestra/testbench": "^11.0",
+        "pestphp/pest": "^4.7"
+    },
+    "autoload": {
+        "psr-4": {
+            "ArtisanBuild\\WakeServer\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "ArtisanBuild\\WakeServer\\Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "test": "pest",
+        "lint": "pint",
+        "lint:test": "pint --test",
+        "stan": "phpstan analyse src --level=max --no-progress",
+        "ready": ["@lint:test", "@stan", "@test", "composer audit"]
+    },
+    "extra": {
+        "laravel": {
+            "providers": ["ArtisanBuild\\WakeServer\\WakeServerServiceProvider"]
+        }
+    },
+    "config": {
+        "sort-packages": true,
+        "allow-plugins": {
+            "pestphp/pest-plugin": true
+        }
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}

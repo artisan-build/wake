@@ -1,0 +1,58 @@
+{
+    "$schema": "https://getcomposer.org/schema.json",
+    "name": "artisan-build/wake-client",
+    "version": "0.1.0",
+    "description": "The Laravel log client for a self-hosted Wake server.",
+    "keywords": ["laravel", "logs", "wake", "monolog"],
+    "license": "MIT",
+    "type": "library",
+    "repositories": [
+        {
+            "type": "path",
+            "url": "../wake-contracts",
+            "options": {"symlink": true}
+        }
+    ],
+    "require": {
+        "php": "^8.3",
+        "artisan-build/wake-contracts": "^0.1",
+        "illuminate/contracts": "^13.0",
+        "illuminate/support": "^13.0"
+    },
+    "require-dev": {
+        "larastan/larastan": "^3.9",
+        "laravel/pint": "^1.27",
+        "orchestra/testbench": "^11.0",
+        "pestphp/pest": "^4.7"
+    },
+    "autoload": {
+        "psr-4": {
+            "ArtisanBuild\\WakeClient\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "ArtisanBuild\\WakeClient\\Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "test": "pest",
+        "lint": "pint",
+        "lint:test": "pint --test",
+        "stan": "phpstan analyse src --level=max --no-progress",
+        "ready": ["@lint:test", "@stan", "@test", "composer audit"]
+    },
+    "extra": {
+        "laravel": {
+            "providers": ["ArtisanBuild\\WakeClient\\WakeClientServiceProvider"]
+        }
+    },
+    "config": {
+        "sort-packages": true,
+        "allow-plugins": {
+            "pestphp/pest-plugin": true
+        }
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}

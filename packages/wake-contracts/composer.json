@@ -1,0 +1,42 @@
+{
+    "$schema": "https://getcomposer.org/schema.json",
+    "name": "artisan-build/wake-contracts",
+    "version": "0.1.0",
+    "description": "The versioned wire contracts shared by the Wake client and server.",
+    "keywords": ["laravel", "logs", "wake", "contracts"],
+    "license": "MIT",
+    "type": "library",
+    "require": {
+        "php": "^8.3"
+    },
+    "require-dev": {
+        "laravel/pint": "^1.27",
+        "pestphp/pest": "^4.7",
+        "phpstan/phpstan": "^2.1"
+    },
+    "autoload": {
+        "psr-4": {
+            "ArtisanBuild\\WakeContracts\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "ArtisanBuild\\WakeContracts\\Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "test": "pest",
+        "lint": "pint",
+        "lint:test": "pint --test",
+        "stan": "phpstan analyse src --level=max --no-progress",
+        "ready": ["@lint:test", "@stan", "@test", "composer audit"]
+    },
+    "config": {
+        "sort-packages": true,
+        "allow-plugins": {
+            "pestphp/pest-plugin": true
+        }
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}

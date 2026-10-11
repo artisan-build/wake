@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "b2a66a6e2740b07ee1ffd964fad5807b",
+    "content-hash": "f9612d6078b25abe6c3ef370d7e15d1c",
     "packages": [
         {
             "name": "artisan-build/bfc-client",
@@ -285,6 +285,217 @@
                 "source": "https://github.com/artisan-build/hone-contracts/tree/v1.6.1"
             },
             "time": "2026-10-10T18:51:12+00:00"
+        },
+        {
+            "name": "artisan-build/wake-client",
+            "version": "0.1.0",
+            "dist": {
+                "type": "path",
+                "url": "packages/wake-client",
+                "reference": "21e26904addedcc6c2035f3c016bb852020881e5"
+            },
+            "require": {
+                "artisan-build/wake-contracts": "^0.1",
+                "illuminate/contracts": "^13.0",
+                "illuminate/support": "^13.0",
+                "php": "^8.3"
+            },
+            "require-dev": {
+                "larastan/larastan": "^3.9",
+                "laravel/pint": "^1.27",
+                "orchestra/testbench": "^11.0",
+                "pestphp/pest": "^4.7"
+            },
+            "type": "library",
+            "extra": {
+                "laravel": {
+                    "providers": [
+                        "ArtisanBuild\\WakeClient\\WakeClientServiceProvider"
+                    ]
+                }
+            },
+            "autoload": {
+                "psr-4": {
+                    "ArtisanBuild\\WakeClient\\": "src/"
+                }
+            },
+            "autoload-dev": {
+                "psr-4": {
+                    "ArtisanBuild\\WakeClient\\Tests\\": "tests/"
+                }
+            },
+            "scripts": {
+                "test": [
+                    "pest"
+                ],
+                "lint": [
+                    "pint"
+                ],
+                "lint:test": [
+                    "pint --test"
+                ],
+                "stan": [
+                    "phpstan analyse src --level=max --no-progress"
+                ],
+                "ready": [
+                    "@lint:test",
+                    "@stan",
+                    "@test",
+                    "composer audit"
+                ]
+            },
+            "license": [
+                "MIT"
+            ],
+            "description": "The Laravel log client for a self-hosted Wake server.",
+            "keywords": [
+                "laravel",
+                "logs",
+                "monolog",
+                "wake"
+            ],
+            "transport-options": {
+                "symlink": true,
+                "relative": true
+            }
+        },
+        {
+            "name": "artisan-build/wake-contracts",
+            "version": "0.1.0",
+            "dist": {
+                "type": "path",
+                "url": "packages/wake-contracts",
+                "reference": "0126a74794b12f226ce8c72282a534844e6b3f86"
+            },
+            "require": {
+                "php": "^8.3"
+            },
+            "require-dev": {
+                "laravel/pint": "^1.27",
+                "pestphp/pest": "^4.7",
+                "phpstan/phpstan": "^2.1"
+            },
+            "type": "library",
+            "autoload": {
+                "psr-4": {
+                    "ArtisanBuild\\WakeContracts\\": "src/"
+                }
+            },
+            "autoload-dev": {
+                "psr-4": {
+                    "ArtisanBuild\\WakeContracts\\Tests\\": "tests/"
+                }
+            },
+            "scripts": {
+                "test": [
+                    "pest"
+                ],
+                "lint": [
+                    "pint"
+                ],
+                "lint:test": [
+                    "pint --test"
+                ],
+                "stan": [
+                    "phpstan analyse src --level=max --no-progress"
+                ],
+                "ready": [
+                    "@lint:test",
+                    "@stan",
+                    "@test",
+                    "composer audit"
+                ]
+            },
+            "license": [
+                "MIT"
+            ],
+            "description": "The versioned wire contracts shared by the Wake client and server.",
+            "keywords": [
+                "contracts",
+                "laravel",
+                "logs",
+                "wake"
+            ],
+            "transport-options": {
+                "symlink": true,
+                "relative": true
+            }
+        },
+        {
+            "name": "artisan-build/wake-server",
+            "version": "0.1.0",
+            "dist": {
+                "type": "path",
+                "url": "packages/wake-server",
+                "reference": "2208a6c060ac1baec7cf0df007ff121adc65b75e"
+            },
+            "require": {
+                "artisan-build/built-for-cloud": "^0.19.9",
+                "artisan-build/wake-contracts": "^0.1",
+                "illuminate/contracts": "^13.0",
+                "illuminate/database": "^13.0",
+                "illuminate/support": "^13.0",
+                "laravel/mcp": "^1.0",
+                "php": "^8.3"
+            },
+            "require-dev": {
+                "larastan/larastan": "^3.9",
+                "laravel/pint": "^1.27",
+                "orchestra/testbench": "^11.0",
+                "pestphp/pest": "^4.7"
+            },
+            "type": "library",
+            "extra": {
+                "laravel": {
+                    "providers": [
+                        "ArtisanBuild\\WakeServer\\WakeServerServiceProvider"
+                    ]
+                }
+            },
+            "autoload": {
+                "psr-4": {
+                    "ArtisanBuild\\WakeServer\\": "src/"
+                }
+            },
+            "autoload-dev": {
+                "psr-4": {
+                    "ArtisanBuild\\WakeServer\\Tests\\": "tests/"
+                }
+            },
+            "scripts": {
+                "test": [
+                    "pest"
+                ],
+                "lint": [
+                    "pint"
+                ],
+                "lint:test": [
+                    "pint --test"
+                ],
+                "stan": [
+                    "phpstan analyse src --level=max --no-progress"
+                ],
+                "ready": [
+                    "@lint:test",
+                    "@stan",
+                    "@test",
+                    "composer audit"
+                ]
+            },
+            "license": [
+                "MIT"
+            ],
+            "description": "The ingest, storage, and MCP server package for Wake.",
+            "keywords": [
+                "laravel",
+                "logs",
+                "mcp",
+                "wake"
+            ],
+            "transport-options": {
+                "symlink": true,
+                "relative": true
+            }
         },
         {
             "name": "aws/aws-crt-php",
@@ -1995,6 +2206,80 @@
                 "source": "https://github.com/laravel/framework"
             },
             "time": "2026-10-06T13:52:37+00:00"
+        },
+        {
+            "name": "laravel/mcp",
+            "version": "v1.0.1",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/laravel/mcp.git",
+                "reference": "92987a9d03847801299ff4abe909ba7686147dde"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/laravel/mcp/zipball/92987a9d03847801299ff4abe909ba7686147dde",
+                "reference": "92987a9d03847801299ff4abe909ba7686147dde",
+                "shasum": ""
+            },
+            "require": {
+                "ext-json": "*",
+                "ext-mbstring": "*",
+                "illuminate/console": "^11.45.3|^12.41.1|^13.0",
+                "illuminate/container": "^11.45.3|^12.41.1|^13.0",
+                "illuminate/contracts": "^11.45.3|^12.41.1|^13.0",
+                "illuminate/http": "^11.45.3|^12.41.1|^13.0",
+                "illuminate/json-schema": "^12.41.1|^13.0",
+                "illuminate/routing": "^11.45.3|^12.41.1|^13.0",
+                "illuminate/support": "^11.45.3|^12.41.1|^13.0",
+                "illuminate/validation": "^11.45.3|^12.41.1|^13.0",
+                "php": "^8.2",
+                "symfony/process": "^7.4.5|^8.0.5"
+            },
+            "require-dev": {
+                "laravel/pint": "^1.20",
+                "orchestra/testbench": "^9.15|^10.8|^11.0",
+                "pestphp/pest": "^3.8.5|^4.3.2",
+                "phpstan/phpstan": "^2.1.27",
+                "rector/rector": "^2.2.4"
+            },
+            "type": "library",
+            "extra": {
+                "laravel": {
+                    "aliases": {
+                        "Mcp": "Laravel\\Mcp\\Facades\\Mcp"
+                    },
+                    "providers": [
+                        "Laravel\\Mcp\\Server\\McpServiceProvider"
+                    ]
+                }
+            },
+            "autoload": {
+                "psr-4": {
+                    "Laravel\\Mcp\\": "src/",
+                    "Laravel\\Mcp\\Server\\": "src/Server/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Taylor Otwell",
+                    "email": "taylor@laravel.com"
+                }
+            ],
+            "description": "Rapidly build MCP servers for your Laravel applications.",
+            "homepage": "https://github.com/laravel/mcp",
+            "keywords": [
+                "laravel",
+                "mcp"
+            ],
+            "support": {
+                "issues": "https://github.com/laravel/mcp/issues",
+                "source": "https://github.com/laravel/mcp"
+            },
+            "time": "2026-09-24T10:45:09+00:00"
         },
         {
             "name": "laravel/nightwatch",
@@ -7720,6 +8005,156 @@
     ],
     "packages-dev": [
         {
+            "name": "artisan-build/gh",
+            "version": "1.0.0",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/artisan-build/gh.git",
+                "reference": "b7e4330a32bfd595661abe70e70fae63dc9f1330"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/artisan-build/gh/zipball/b7e4330a32bfd595661abe70e70fae63dc9f1330",
+                "reference": "b7e4330a32bfd595661abe70e70fae63dc9f1330",
+                "shasum": ""
+            },
+            "require": {
+                "illuminate/support": "^11.9|^12.0|^13.0"
+            },
+            "require-dev": {
+                "larastan/larastan": "^v3.0.2",
+                "laravel/pint": "^1.19.0",
+                "orchestra/testbench": "^v9.9.0",
+                "pestphp/pest": "^v3.7.1",
+                "phpstan/phpstan": "^2.1.0"
+            },
+            "type": "library",
+            "extra": {
+                "laravel": {
+                    "providers": [
+                        "ArtisanBuild\\GH\\Providers\\GHServiceProvider"
+                    ]
+                }
+            },
+            "autoload": {
+                "psr-4": {
+                    "ArtisanBuild\\GH\\": "src/",
+                    "ArtisanBuild\\GH\\Tests\\": "tests/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "support": {
+                "source": "https://github.com/artisan-build/gh/tree/1.0.0"
+            },
+            "time": "2026-03-19T08:41:31+00:00"
+        },
+        {
+            "name": "artisan-build/kibble",
+            "version": "v1.2.0",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/artisan-build/kibble.git",
+                "reference": "62eb3f7887699980d9070e094da62149de63cc3f"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/artisan-build/kibble/zipball/62eb3f7887699980d9070e094da62149de63cc3f",
+                "reference": "62eb3f7887699980d9070e094da62149de63cc3f",
+                "shasum": ""
+            },
+            "require": {
+                "artisan-build/gh": "*",
+                "artisan-build/packagist": "*",
+                "illuminate/filesystem": "^11.9|^12.0|^13.0",
+                "illuminate/process": "^11.9|^12.0|^13.0",
+                "illuminate/support": "^11.9|^12.0|^13.0",
+                "laravel/prompts": "*"
+            },
+            "require-dev": {
+                "larastan/larastan": "^v3.0.2",
+                "laravel/pint": "^1.19.0",
+                "orchestra/testbench": "^v9.9.0",
+                "pestphp/pest": "^v3.7.1",
+                "phpstan/phpstan": "^2.1.0"
+            },
+            "type": "library",
+            "extra": {
+                "laravel": {
+                    "providers": [
+                        "ArtisanBuild\\Kibble\\Providers\\KibbleServiceProvider"
+                    ]
+                }
+            },
+            "autoload": {
+                "psr-4": {
+                    "ArtisanBuild\\Kibble\\": "src/",
+                    "ArtisanBuild\\Kibble\\Tests\\": "tests/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "description": "PHP package creation and management tools",
+            "support": {
+                "issues": "https://github.com/artisan-build/kibble/issues",
+                "source": "https://github.com/artisan-build/kibble/tree/v1.2.0"
+            },
+            "time": "2026-06-11T08:47:51+00:00"
+        },
+        {
+            "name": "artisan-build/packagist",
+            "version": "v1.0.0",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/artisan-build/packagist.git",
+                "reference": "5562b98f01d78a7e8837bb4ac401ff3f2d3262ad"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/artisan-build/packagist/zipball/5562b98f01d78a7e8837bb4ac401ff3f2d3262ad",
+                "reference": "5562b98f01d78a7e8837bb4ac401ff3f2d3262ad",
+                "shasum": ""
+            },
+            "require": {
+                "illuminate/support": "^11.36|^12.0|^13.0",
+                "saloonphp/saloon": "^4.0"
+            },
+            "require-dev": {
+                "larastan/larastan": "^v3.0.2",
+                "laravel/pint": "^1.19.0",
+                "orchestra/testbench": "^v9.9.0",
+                "pestphp/pest": "^v3.7.1",
+                "phpstan/phpstan": "^2.1.0"
+            },
+            "type": "library",
+            "extra": {
+                "laravel": {
+                    "providers": [
+                        "ArtisanBuild\\Packagist\\Providers\\PackagistServiceProvider"
+                    ]
+                }
+            },
+            "autoload": {
+                "psr-4": {
+                    "ArtisanBuild\\Packagist\\": "src/",
+                    "ArtisanBuild\\Packagist\\Tests\\": "tests/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "description": "Laravel wrapper for the Packagist API",
+            "support": {
+                "source": "https://github.com/artisan-build/packagist/tree/v1.0.0"
+            },
+            "time": "2026-03-27T13:14:01+00:00"
+        },
+        {
             "name": "barryvdh/laravel-ide-helper",
             "version": "v3.7.0",
             "source": {
@@ -8220,46 +8655,24 @@
         },
         {
             "name": "driftingly/rector-laravel",
-            "version": "2.6.2",
+            "version": "2.5.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/driftingly/rector-laravel.git",
-                "reference": "c0f9a2ff7365cec45d4dc64223608e7cec74604a"
+                "reference": "0dbdd842dfdbc821cfe5f47ca7326e2502b2a107"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/driftingly/rector-laravel/zipball/c0f9a2ff7365cec45d4dc64223608e7cec74604a",
-                "reference": "c0f9a2ff7365cec45d4dc64223608e7cec74604a",
+                "url": "https://api.github.com/repos/driftingly/rector-laravel/zipball/0dbdd842dfdbc821cfe5f47ca7326e2502b2a107",
+                "reference": "0dbdd842dfdbc821cfe5f47ca7326e2502b2a107",
                 "shasum": ""
             },
             "require": {
-                "php": ">=8.3",
-                "rector/rector": "^2.6.4",
-                "symplify/rule-doc-generator-contracts": "^11.2",
+                "php": "^7.4 || ^8.0",
+                "rector/rector": "^2.2.7",
                 "webmozart/assert": "^1.11 || ^2.0"
             },
-            "require-dev": {
-                "boundwize/structarmed": "^0.16",
-                "nette/utils": "^4.0",
-                "nikic/php-parser": "^5.6",
-                "phpstan/extension-installer": "^1.3",
-                "phpstan/phpstan": "^2.2",
-                "phpstan/phpstan-deprecation-rules": "^2.0",
-                "phpstan/phpstan-strict-rules": "^2.0",
-                "phpstan/phpstan-webmozart-assert": "^2.0",
-                "phpunit/phpunit": "^10.5",
-                "symplify/rule-doc-generator": "^12.2",
-                "tightenco/duster": "^3.1",
-                "tracy/tracy": "^2.10"
-            },
             "type": "rector-extension",
-            "extra": {
-                "rector": {
-                    "includes": [
-                        "config/config.php"
-                    ]
-                }
-            },
             "autoload": {
                 "psr-4": {
                     "RectorLaravel\\": "src"
@@ -8272,9 +8685,9 @@
             "description": "Rector upgrades rules for Laravel Framework",
             "support": {
                 "issues": "https://github.com/driftingly/rector-laravel/issues",
-                "source": "https://github.com/driftingly/rector-laravel/tree/2.6.2"
+                "source": "https://github.com/driftingly/rector-laravel/tree/2.5.0"
             },
-            "time": "2026-08-29T21:42:57+00:00"
+            "time": "2026-06-02T16:22:14+00:00"
         },
         {
             "name": "fakerphp/faker",
@@ -10694,6 +11107,88 @@
             "time": "2026-10-06T08:46:45+00:00"
         },
         {
+            "name": "saloonphp/saloon",
+            "version": "v4.5.0",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/saloonphp/saloon.git",
+                "reference": "2f45e526f9d1d10a138f864492b074b046d2e52e"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/saloonphp/saloon/zipball/2f45e526f9d1d10a138f864492b074b046d2e52e",
+                "reference": "2f45e526f9d1d10a138f864492b074b046d2e52e",
+                "shasum": ""
+            },
+            "require": {
+                "guzzlehttp/guzzle": "^7.6 || ^8.0",
+                "guzzlehttp/promises": "^1.5 || ^2.0 || ^3.0",
+                "guzzlehttp/psr7": "^2.0 || ^3.0",
+                "php": "^8.2",
+                "psr/clock": "^1.0",
+                "psr/http-factory": "^1.0",
+                "psr/http-message": "^1.1 || ^2.0"
+            },
+            "conflict": {
+                "sammyjo20/saloon": "*"
+            },
+            "require-dev": {
+                "ext-simplexml": "*",
+                "friendsofphp/php-cs-fixer": "^3.5",
+                "illuminate/collections": "^10.0 || ^11.0 || ^12.0",
+                "league/flysystem": "^3.0",
+                "pestphp/pest": "^2.36.0 || ^3.8.2 || ^4.1.4",
+                "phpstan/phpstan": "^2.1.13",
+                "saloonphp/xml-wrangler": "^1.1",
+                "spatie/invade": "^2.1",
+                "symfony/dom-crawler": "^6.0 || ^7.0",
+                "symfony/var-dumper": "^6.3 || ^7.0"
+            },
+            "suggest": {
+                "illuminate/collections": "Required for the response collect() method.",
+                "saloonphp/xml-wrangler": "Required for the response xmlReader() method.",
+                "symfony/dom-crawler": "Required for the response dom() method.",
+                "symfony/var-dumper": "Required for default debugging drivers."
+            },
+            "type": "library",
+            "autoload": {
+                "psr-4": {
+                    "Saloon\\": "src/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Sam Carré",
+                    "email": "29132017+Sammyjo20@users.noreply.github.com",
+                    "role": "Developer"
+                }
+            ],
+            "description": "Build beautiful API integrations and SDKs with Saloon",
+            "homepage": "https://github.com/saloonphp/saloon",
+            "keywords": [
+                "api",
+                "api-integrations",
+                "saloon",
+                "sammyjo20",
+                "sdk"
+            ],
+            "support": {
+                "issues": "https://github.com/saloonphp/saloon/issues",
+                "source": "https://github.com/saloonphp/saloon/tree/v4.5.0"
+            },
+            "funding": [
+                {
+                    "url": "https://github.com/sammyjo20",
+                    "type": "github"
+                }
+            ],
+            "time": "2026-10-03T14:00:29+00:00"
+        },
+        {
             "name": "sebastian/cli-parser",
             "version": "4.2.1",
             "source": {
@@ -11753,66 +12248,6 @@
                 }
             ],
             "time": "2026-09-26T06:33:49+00:00"
-        },
-        {
-            "name": "symplify/rule-doc-generator-contracts",
-            "version": "11.2.0",
-            "source": {
-                "type": "git",
-                "url": "https://github.com/symplify/rule-doc-generator-contracts.git",
-                "reference": "479cfcfd46047f80624aba931d9789e50475b5c6"
-            },
-            "dist": {
-                "type": "zip",
-                "url": "https://api.github.com/repos/symplify/rule-doc-generator-contracts/zipball/479cfcfd46047f80624aba931d9789e50475b5c6",
-                "reference": "479cfcfd46047f80624aba931d9789e50475b5c6",
-                "shasum": ""
-            },
-            "require": {
-                "php": ">=8.1"
-            },
-            "require-dev": {
-                "php-parallel-lint/php-parallel-lint": "^1.3",
-                "phpstan/extension-installer": "^1.2",
-                "rector/rector": "^0.15.10",
-                "symplify/easy-ci": "^11.1",
-                "symplify/easy-coding-standard": "^11.1",
-                "symplify/easy-testing": "^11.1",
-                "symplify/phpstan-extensions": "^11.1",
-                "symplify/phpstan-rules": "11.2.3.72",
-                "tomasvotruba/unused-public": "^0.0.34"
-            },
-            "type": "library",
-            "extra": {
-                "branch-alias": {
-                    "dev-main": "11.2-dev"
-                }
-            },
-            "autoload": {
-                "psr-4": {
-                    "Symplify\\RuleDocGenerator\\": "src"
-                }
-            },
-            "notification-url": "https://packagist.org/downloads/",
-            "license": [
-                "MIT"
-            ],
-            "description": "Contracts for production code of RuleDocGenerator",
-            "support": {
-                "source": "https://github.com/symplify/rule-doc-generator-contracts/tree/11.2.0"
-            },
-            "funding": [
-                {
-                    "url": "https://www.paypal.me/rectorphp",
-                    "type": "custom"
-                },
-                {
-                    "url": "https://github.com/tomasvotruba",
-                    "type": "github"
-                }
-            ],
-            "abandoned": true,
-            "time": "2024-03-18T22:02:54+00:00"
         },
         {
             "name": "ta-tikoma/phpunit-architecture-test",

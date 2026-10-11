@@ -1,0 +1,68 @@
+# Wake
+
+Wake is a self-hosted central log sink for organisations that run many Laravel applications.
+
+## Who It Is For
+
+Wake is for teams that need one place where an agent can investigate logs across their Laravel
+applications without sending the log corpus to a third-party service.
+
+## What It Does
+
+This repository currently contains the initial Built for Cloud application scaffold. Log ingestion,
+DuckLake storage, the Laravel client package, the administration surface, and MCP tools are planned in
+the approved v1 build but are not implemented yet.
+
+## Built For Cloud
+
+Wake is installed into a customer's Laravel Cloud account as a Built for Cloud product. Its planned
+Scalpels product page is [scalpels.app/products/wake](https://scalpels.app/products/wake).
+
+## Setting the manifest
+
+Before the first deploy, replace every placeholder in the `manifest` block of
+`config/built-for-cloud.php`:
+
+| Field | Set it to |
+| --- | --- |
+| `name` | The product's display name as Scalpels lists it. |
+| `slug` | The product's lower-kebab-case Scalpels catalog slug. |
+| `description` | One sentence saying what the product does, as on its Scalpels product page. |
+| `icon` | `https://scalpels.app/img/products/transparent/{slug}.png` |
+| `product_url` | `https://scalpels.app/products/{slug}` |
+
+The `slug` must exactly match the product's Scalpels catalog slug; its artwork loads from
+`https://scalpels.app/img/products/transparent/{slug}.png`.
+
+## Local Development
+
+```bash
+composer setup
+composer dev
+```
+
+This app is nodeless by design. Do not add Node, npm, Vite, or a frontend build step. Static assets
+are committed under `public/build`.
+
+## Quality Gate
+
+```bash
+composer ready
+```
+
+Focused tests can be run with `php artisan test --filter=<test-name>`.
+
+## Deployment
+
+Artisan Build agents handling Laravel Cloud work must follow
+`brain/skills/laravel-cloud-deploy/SKILL.md`. Start with read-only discovery. Credentials come from
+the authenticated Laravel Cloud CLI; discover application and environment identifiers rather than
+guessing or committing them. Keep `.cloud/config.json` uncommitted, and verify the application and
+its attached resources after every deployment.
+
+Wake has no provisioned Laravel Cloud environment yet. The v1 build will commit the Cloud application
+configuration after the environment and its resources are created.
+
+## Repository
+
+[github.com/artisan-build/wake](https://github.com/artisan-build/wake)

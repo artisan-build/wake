@@ -42,7 +42,14 @@ final readonly class DeleteAppLogs
         $appId = $this->appId($appId);
         $result = null;
         $acquired = $this->lock->execute(function () use ($appId, &$result): void {
-            $barrier = DB::transaction(fn (): array => $this->removeStagingAndReconcile($appId), 3);
+            $barrier = DB::transaction(function () use ($appId): array {
+                $app = DB::table('wake_connected_apps')->where('id', $appId)->lockForUpdate()->first(['id']);
+                if ($app === null) {
+                    throw new RuntimeException('The target app does not exist.');
+                }
+
+                return $this->removeStagingAndReconcile($appId);
+            }, 3);
             $this->hit('after_staging_barrier', $appId);
             $lakeRows = $this->lake->deleteAppRows($appId);
             $this->hit('after_lake_delete', $appId);
@@ -51,10 +58,9 @@ final readonly class DeleteAppLogs
                 $counts['locators'] = DB::table('wake_event_locators')->where('app_id', $appId)->delete();
                 $counts['hourly_groups'] = DB::table('wake_hourly_counts')->where('app_id', $appId)->delete();
                 $counts['errors'] = DB::table('wake_error_events')->where('app_id', $appId)->delete();
-                $late = $this->removeStagingAndReconcile($appId);
                 $this->hit('before_postgres_commit', $appId);
 
-                return [...$counts, ...$late];
+                return $counts;
             }, 3);
             $maintenanceAt = CarbonImmutable::now('UTC');
             $this->lake->expireSnapshots($maintenanceAt);
@@ -65,9 +71,9 @@ final readonly class DeleteAppLogs
                 'hourly_groups' => $derived['hourly_groups'],
                 'hourly_events' => $derived['hourly_events'],
                 'errors' => $derived['errors'],
-                'staging_batches' => $barrier['staging_batches'] + $derived['staging_batches'],
-                'staging_rows' => $barrier['staging_rows'] + $derived['staging_rows'],
-                'manifests_reconciled' => $barrier['manifests_reconciled'] + $derived['manifests_reconciled'],
+                'staging_batches' => $barrier['staging_batches'],
+                'staging_rows' => $barrier['staging_rows'],
+                'manifests_reconciled' => $barrier['manifests_reconciled'],
             ];
         });
         if (! $acquired || ! is_array($result)) {

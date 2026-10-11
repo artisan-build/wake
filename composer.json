@@ -74,6 +74,7 @@
             "Composer\\Config::disableProcessTimeout",
             "@php artisan serve --host=localhost"
         ],
+        "install:duckdb": "bash scripts/install-duckdb.sh",
         "lint": [
             "pint --parallel"
         ],

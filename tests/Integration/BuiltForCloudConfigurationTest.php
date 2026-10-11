@@ -21,7 +21,9 @@ it('owns only the D-UI-3 application configuration overlay', function (): void {
             'guard' => 'bfc',
             'declaration' => null,
             'session_guard' => null,
-            'app_purposes' => [],
+            'app_purposes' => [
+                'wake.ingest' => 'consumption',
+            ],
         ],
         'ui' => [
             'landing_page' => false,
@@ -52,6 +54,9 @@ it('merges package defaults and auto-discovers the released provider', function 
         'credential_purposes' => [],
     ])->and(config('built-for-cloud.product'))->toBe(config('app.name'))
         ->and(config('built-for-cloud.credentials.guard'))->toBe('bfc')
+        ->and(config('built-for-cloud.credentials.app_purposes'))->toBe([
+            'wake.ingest' => 'consumption',
+        ])
         ->and(config('auth.defaults.guard'))->toBe('web')
         ->and(config('auth.providers.users.model'))->toBe(User::class)
         ->and(app()->getLoadedProviders())->toHaveKey(BuiltForCloudServiceProvider::class, true);

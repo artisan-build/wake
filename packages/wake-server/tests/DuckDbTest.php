@@ -88,3 +88,36 @@ it('rejects an insertion chunk above the hard bound', function (): void {
     expect(fn () => (new DuckDb)->commitBatch('batch', array_fill(0, 100_001, $row)))
         ->toThrow(RuntimeException::class, 'cannot exceed 100000');
 });
+
+it('caps adjacent-file compaction at three outputs', function (): void {
+    file_put_contents($this->binary, <<<'SH'
+#!/bin/sh
+input="$(cat)"
+if printf '%s' "$input" | grep -q 'ducklake_merge_adjacent_files'; then
+  printf '%s' "$input" | grep -q 'max_compacted_files => 3'
+fi
+printf '%s\n' '{"marker":"__WAKE_RESULT_START__"}' '{"files":4}' '{"marker":"__WAKE_RESULT_END__"}'
+SH);
+
+    expect((new DuckDb)->compact())->toBe(['files_before' => 4, 'files_after' => 4]);
+});
+
+it('deletes only older lake days then expires snapshots and cleans files', function (): void {
+    file_put_contents($this->binary, <<<'SH'
+#!/bin/sh
+input="$(cat)"
+case "$input" in
+  *"DELETE FROM lake.logs"*) printf '%s' "$input" | grep -q "event_date < CAST('2026-09-11' AS DATE)" ;;
+  *"ducklake_expire_snapshots"*) printf '%s' "$input" | grep -q "older_than" ;;
+  *"ducklake_cleanup_old_files"*) : ;;
+  *) exit 1 ;;
+esac
+printf '%s\n' '{"marker":"__WAKE_RESULT_START__"}' '{"deleted_rows":2}' '{"marker":"__WAKE_RESULT_END__"}'
+SH);
+    $lake = new DuckDb;
+    $cutoff = new DateTimeImmutable('2026-09-11 00:00:00 UTC');
+
+    expect($lake->deleteBefore($cutoff))->toBe(2);
+    $lake->expireSnapshots($cutoff);
+    $lake->cleanupFiles();
+});

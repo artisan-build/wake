@@ -13,13 +13,18 @@ uses(RefreshDatabase::class);
 
 final class MemoryLakeWriter implements LakeWriter
 {
+    public int $bootstraps = 0;
+
     /** @var array<string, true> */
     public array $manifest = [];
 
     /** @var array<string, int> */
     public array $events = [];
 
-    public function bootstrap(): void {}
+    public function bootstrap(): void
+    {
+        $this->bootstraps++;
+    }
 
     public function commitBatch(string $batchId, array $rows): void
     {
@@ -33,6 +38,13 @@ final class MemoryLakeWriter implements LakeWriter
         $this->manifest[$batchId] = true;
     }
 }
+
+it('returns before starting DuckDB when no batches are claimed', function (): void {
+    $lake = new MemoryLakeWriter;
+
+    expect((new FlushLogBatches($lake))->run())->toBe(['batches' => 0, 'rows' => 0])
+        ->and($lake->bootstraps)->toBe(0);
+});
 
 it('claims on PostgreSQL with skip locked', function (): void {
     seedFlushBatch();

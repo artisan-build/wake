@@ -23,7 +23,11 @@ final class FlushLogBatches
             ->where('claimed_at', '<', now()->subMinutes(5))
             ->update(['status' => StagingBatchStatus::Pending, 'claimed_at' => null]);
 
-        $batches = $this->claim($limit ?? 20);
+        $batches = $this->claim($limit ?? (int) config('wake-server.lake.flush_batch_limit', 20));
+        if ($batches->isEmpty()) {
+            return ['batches' => 0, 'rows' => 0];
+        }
+
         $this->lake->bootstrap();
         $rows = 0;
 

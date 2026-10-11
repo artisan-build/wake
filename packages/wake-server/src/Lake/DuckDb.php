@@ -4,11 +4,12 @@ declare(strict_types=1);
 
 namespace ArtisanBuild\WakeServer\Lake;
 
+use DateTimeInterface;
 use RuntimeException;
 use SensitiveParameter;
 use Symfony\Component\Process\Process;
 
-final class DuckDb implements LakeWriter
+final class DuckDb implements LakeMaintenance, LakeWriter
 {
     public const int MAX_INSERT_ROWS = 100_000;
 
@@ -79,6 +80,33 @@ final class DuckDb implements LakeWriter
         $insert = $values === [] ? '' : 'INSERT INTO lake.logs SELECT * FROM (VALUES '.implode(",\n", $values).') AS incoming(batch_id,event_id,app_id,event_date,occurred_at,level,channel,message,context,extra,exception,environment,hostname,correlation_id,ingested_at) WHERE NOT EXISTS (SELECT 1 FROM lake.flush_manifest WHERE batch_id = '.$batch.');';
 
         $this->query("BEGIN TRANSACTION;\n{$insert}\nINSERT INTO lake.flush_manifest SELECT {$batch}, now() WHERE NOT EXISTS (SELECT 1 FROM lake.flush_manifest WHERE batch_id = {$batch});\nCOMMIT;", 120);
+    }
+
+    public function compact(): array
+    {
+        $before = $this->query("SELECT count(*) AS files FROM ducklake_list_files('lake', 'logs');", 300);
+        $after = $this->query("CALL ducklake_merge_adjacent_files('lake', 'logs', max_compacted_files => 3); SELECT count(*) AS files FROM ducklake_list_files('lake', 'logs');", 300);
+
+        return ['files_before' => (int) ($before[0]['files'] ?? 0), 'files_after' => (int) ($after[array_key_last($after)]['files'] ?? 0)];
+    }
+
+    public function deleteBefore(DateTimeInterface $cutoff): int
+    {
+        $date = $this->literal($cutoff->format('Y-m-d'));
+        $result = $this->query("SELECT count(*) AS deleted_rows FROM lake.logs WHERE event_date < CAST({$date} AS DATE); DELETE FROM lake.logs WHERE event_date < CAST({$date} AS DATE);", 300);
+
+        return (int) ($result[0]['deleted_rows'] ?? 0);
+    }
+
+    public function expireSnapshots(DateTimeInterface $cutoff): void
+    {
+        $timestamp = $this->literal($cutoff->format('Y-m-d H:i:sP'));
+        $this->query("CALL ducklake_expire_snapshots('lake', older_than => CAST({$timestamp} AS TIMESTAMPTZ));", 300);
+    }
+
+    public function cleanupFiles(): void
+    {
+        $this->query("CALL ducklake_cleanup_old_files('lake');", 300);
     }
 
     public function literal(?string $value): string

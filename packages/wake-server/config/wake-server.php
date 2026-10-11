@@ -10,6 +10,8 @@ return [
         'data_prefix' => 'ducklake/logs/',
         'threads' => 1,
         'memory_limit' => '384MB',
+        'flush_batch_limit' => 20,
+        'retention_days' => 30,
     ],
     'ingest' => [
         'batches_per_minute' => 120,

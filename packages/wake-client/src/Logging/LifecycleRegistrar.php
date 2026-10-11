@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace ArtisanBuild\WakeClient\Logging;
 
 use Illuminate\Contracts\Events\Dispatcher;
-use Illuminate\Foundation\Application;
+use Illuminate\Contracts\Foundation\Application;
 
 final class LifecycleRegistrar
 {

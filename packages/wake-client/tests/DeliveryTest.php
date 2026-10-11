@@ -3,8 +3,10 @@
 declare(strict_types=1);
 
 use ArtisanBuild\WakeClient\Contracts\PayloadFilter;
+use ArtisanBuild\WakeClient\Contracts\Transport;
 use ArtisanBuild\WakeClient\Logging\LifecycleRegistrar;
 use ArtisanBuild\WakeClient\Logging\WakeHandler;
+use ArtisanBuild\WakeClient\Transport\HttpTransport;
 use ArtisanBuild\WakeContracts\LogEvent;
 use Illuminate\Console\Events\CommandFinished;
 use Illuminate\Console\OutputStyle;
@@ -46,6 +48,11 @@ it('flushes at the batch cap with auth idempotency and configured timeouts', fun
             && $body['dropped_count'] === 0
             && count($body['rows']) === 2;
     });
+    $transport = app(Transport::class);
+    expect($transport)->toBeInstanceOf(HttpTransport::class)
+        ->and($transport->lastOptions()['connect_timeout'])->toBe(0.25)
+        ->and($transport->lastOptions()['timeout'])->toBe(1.25)
+        ->and($transport->attempts())->toBe(1);
 });
 
 it('carries failed rows and filtered drops until one valid acceptance', function (): void {
@@ -98,6 +105,7 @@ it('swallows transport failures and prevents recursive enqueueing', function ():
     $handler->handle(deliveryRecord('two'));
 
     expect($handler->state())->toBe(['buffered' => 0, 'dropped' => 2]);
+    expect(app(Transport::class)->attempts())->toBe(1);
 });
 
 it('registers lifecycle listeners once and flushes console completion', function (): void {

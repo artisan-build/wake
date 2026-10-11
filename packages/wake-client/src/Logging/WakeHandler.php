@@ -5,11 +5,10 @@ declare(strict_types=1);
 namespace ArtisanBuild\WakeClient\Logging;
 
 use ArtisanBuild\WakeClient\Contracts\PayloadFilter;
-use ArtisanBuild\WakeContracts\AcceptedReceipt;
+use ArtisanBuild\WakeClient\Contracts\Transport;
 use ArtisanBuild\WakeContracts\IngestEnvelope;
 use ArtisanBuild\WakeContracts\IngestProtocol;
 use ArtisanBuild\WakeContracts\LogEvent;
-use Illuminate\Http\Client\Factory;
 use Illuminate\Support\Str;
 use Monolog\Handler\AbstractHandler;
 use Monolog\LogRecord;
@@ -24,16 +23,16 @@ final class WakeHandler extends AbstractHandler
 
     private bool $delivering = false;
 
+    private ?bool $lastDeliverySucceeded = null;
+
     public function __construct(
         private readonly RecordNormalizer $normalizer,
         private readonly PayloadFilter $filter,
-        private readonly Factory $http,
+        private readonly Transport $transport,
         private readonly ?string $url,
         private readonly ?string $token,
         private readonly int $batchSize,
         private readonly int $maxBuffer,
-        private readonly float $connectTimeout,
-        private readonly float $timeout,
     ) {
         parent::__construct();
     }
@@ -83,22 +82,9 @@ final class WakeHandler extends AbstractHandler
             );
 
             $this->delivering = true;
-            $response = $this->http
-                ->withToken((string) $this->token)
-                ->acceptJson()
-                ->asJson()
-                ->connectTimeout($this->connectTimeout)
-                ->timeout($this->timeout)
-                ->withHeaders([IngestProtocol::IDEMPOTENCY_HEADER => $key])
-                ->post(rtrim((string) $this->url, '/').IngestProtocol::PATH, $envelope->toArray());
-
-            if ($response->status() !== IngestProtocol::ACCEPTED_STATUS) {
+            $this->lastDeliverySucceeded = $this->transport->send($envelope);
+            if (! $this->lastDeliverySucceeded) {
                 throw new \RuntimeException('Wake rejected the batch.');
-            }
-
-            $receipt = AcceptedReceipt::fromArray($response->json());
-            if ($receipt->acceptedCount !== count($rows)) {
-                throw new \RuntimeException('Wake returned an invalid receipt.');
             }
 
             $this->droppedCount = max(0, $this->droppedCount - $reportedDrops);
@@ -118,6 +104,11 @@ final class WakeHandler extends AbstractHandler
     public function state(): array
     {
         return ['buffered' => count($this->buffer), 'dropped' => $this->droppedCount];
+    }
+
+    public function lastDeliverySucceeded(): ?bool
+    {
+        return $this->lastDeliverySucceeded;
     }
 
     private function configured(): bool

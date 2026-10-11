@@ -13,7 +13,7 @@ interface LakeMaintenance
 
     public function deleteBefore(DateTimeInterface $cutoff): int;
 
-    public function expireSnapshots(DateTimeInterface $cutoff): void;
+    public function expireSnapshots(DateTimeInterface $through): void;
 
     public function cleanupFiles(): void;
 }

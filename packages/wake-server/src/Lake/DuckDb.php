@@ -98,15 +98,15 @@ final class DuckDb implements LakeMaintenance, LakeWriter
         return (int) ($result[0]['deleted_rows'] ?? 0);
     }
 
-    public function expireSnapshots(DateTimeInterface $cutoff): void
+    public function expireSnapshots(DateTimeInterface $through): void
     {
-        $timestamp = $this->literal($cutoff->format('Y-m-d H:i:sP'));
+        $timestamp = $this->literal($through->format('Y-m-d H:i:sP'));
         $this->query("CALL ducklake_expire_snapshots('lake', older_than => CAST({$timestamp} AS TIMESTAMPTZ));", 300);
     }
 
     public function cleanupFiles(): void
     {
-        $this->query("CALL ducklake_cleanup_old_files('lake');", 300);
+        $this->query("CALL ducklake_cleanup_old_files('lake', cleanup_all => true);", 300);
     }
 
     public function literal(?string $value): string

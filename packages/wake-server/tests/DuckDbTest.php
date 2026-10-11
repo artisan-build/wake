@@ -102,22 +102,23 @@ SH);
     expect((new DuckDb)->compact())->toBe(['files_before' => 4, 'files_after' => 4]);
 });
 
-it('deletes only older lake days then expires snapshots and cleans files', function (): void {
+it('uses the data cutoff for deletion then expires snapshots through maintenance and forces cleanup', function (): void {
     file_put_contents($this->binary, <<<'SH'
 #!/bin/sh
 input="$(cat)"
 case "$input" in
   *"DELETE FROM lake.logs"*) printf '%s' "$input" | grep -q "event_date < CAST('2026-09-11' AS DATE)" ;;
-  *"ducklake_expire_snapshots"*) printf '%s' "$input" | grep -q "older_than" ;;
-  *"ducklake_cleanup_old_files"*) : ;;
+  *"ducklake_expire_snapshots"*) printf '%s' "$input" | grep -q "older_than => CAST('2026-10-11 15:30:00+00:00' AS TIMESTAMPTZ)" ;;
+  *"ducklake_cleanup_old_files"*) printf '%s' "$input" | grep -q "cleanup_all => true" ;;
   *) exit 1 ;;
 esac
 printf '%s\n' '{"marker":"__WAKE_RESULT_START__"}' '{"deleted_rows":2}' '{"marker":"__WAKE_RESULT_END__"}'
 SH);
     $lake = new DuckDb;
     $cutoff = new DateTimeImmutable('2026-09-11 00:00:00 UTC');
+    $maintenanceAt = new DateTimeImmutable('2026-10-11 15:30:00 UTC');
 
     expect($lake->deleteBefore($cutoff))->toBe(2);
-    $lake->expireSnapshots($cutoff);
+    $lake->expireSnapshots($maintenanceAt);
     $lake->cleanupFiles();
 });

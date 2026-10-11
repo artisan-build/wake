@@ -11,6 +11,9 @@ use Illuminate\Support\Facades\Schema;
 
 final class RecordingLakeMaintenance implements LakeMaintenance
 {
+    /** @var list<string> */
+    public array $calls = [];
+
     public ?string $deletedBefore = null;
 
     public ?string $expiredBefore = null;
@@ -25,18 +28,21 @@ final class RecordingLakeMaintenance implements LakeMaintenance
     public function deleteBefore(DateTimeInterface $cutoff): int
     {
         $this->deletedBefore = $cutoff->format('Y-m-d');
+        $this->calls[] = 'delete';
 
         return 2;
     }
 
-    public function expireSnapshots(DateTimeInterface $cutoff): void
+    public function expireSnapshots(DateTimeInterface $through): void
     {
-        $this->expiredBefore = $cutoff->format('Y-m-d');
+        $this->expiredBefore = $through->format('Y-m-d H:i:sP');
+        $this->calls[] = 'expire';
     }
 
     public function cleanupFiles(): void
     {
         $this->cleaned = true;
+        $this->calls[] = 'cleanup';
     }
 }
 
@@ -74,6 +80,7 @@ it('uses a whole-day default cutoff and prunes only older derived rows', functio
         'cutoff' => '2026-09-11', 'lake_rows' => 2, 'locators' => 1, 'hourly' => 1, 'errors' => 1,
     ])->and(DB::table('wake_event_locators')->pluck('event_date')->all())->toHaveCount(2)
         ->and($lake->deletedBefore)->toBe('2026-09-11')
-        ->and($lake->expiredBefore)->toBe('2026-09-11')
-        ->and($lake->cleaned)->toBeTrue();
+        ->and($lake->expiredBefore)->toBe('2026-10-11 15:30:00+00:00')
+        ->and($lake->cleaned)->toBeTrue()
+        ->and($lake->calls)->toBe(['delete', 'expire', 'cleanup']);
 });

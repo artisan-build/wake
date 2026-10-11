@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Mcp\Tools;
 
+use App\Services\WakeQueries;
 use ArtisanBuild\BuiltForCloud\Mcp\AdvertisesToolClassification;
 use ArtisanBuild\BuiltForCloud\Mcp\AdvertisesToolEffect;
 use ArtisanBuild\BuiltForCloud\Mcp\Classification;
@@ -26,13 +27,23 @@ final class TailLogs extends WakeTool
 
     public function schema(JsonSchema $schema): array
     {
-        return ['app' => $schema->string()->min(1), 'all_apps' => $schema->boolean(), 'environment' => $schema->string(), 'level' => $schema->string(), 'cursor' => $schema->string(), 'limit' => $schema->integer()->min(1)->max(500)];
+        return ['app' => $schema->string()->min(1)->max(255), 'all_apps' => $schema->boolean(), 'environment' => $schema->string()->min(1)->max(255), 'level' => $schema->string()->min(1)->max(20), 'from' => $schema->string()->required(), 'to' => $schema->string()->required(), 'cursor' => $schema->string()->min(1)->max(2048), 'limit' => $schema->integer()->min(1)->max(500)];
     }
 
     public function handle(Request $request): Response
     {
         $this->authorize();
+        $validated = $this->validateScoped($request, [
+            'app' => ['nullable', 'string', 'min:1', 'max:255'],
+            'all_apps' => ['nullable', 'boolean'],
+            'environment' => ['nullable', 'string', 'min:1', 'max:255'],
+            'level' => ['nullable', 'string', 'min:1', 'max:20'],
+            'from' => ['required', 'date'],
+            'to' => ['required', 'date', 'after_or_equal:from'],
+            'cursor' => ['nullable', 'string', 'min:1', 'max:2048'],
+            'limit' => ['nullable', 'integer', 'min:1', 'max:500'],
+        ], ['app', 'all_apps', 'environment', 'level', 'from', 'to', 'cursor', 'limit']);
 
-        return Response::error('The tail_logs query is not available yet.');
+        return $this->untrusted(resolve(WakeQueries::class)->tail($validated));
     }
 }

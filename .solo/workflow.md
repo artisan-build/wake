@@ -1,75 +1,71 @@
-# Workflow - {{FILL: app name}}
+# Workflow — Wake
 
-Project profile for the `multi-agent-build` skill and every agent working in this Built for Cloud
-app. The coordinator reads this first. Replace every `{{FILL: ...}}` marker before dispatching work,
-then keep the profile truthful as the app evolves.
+Project profile for the `multi-agent-build` skill. Wake is a monorepo with the Laravel application at
+the root and `packages/wake-contracts`, `packages/wake-client`, and `packages/wake-server` as path
+repositories.
 
-This repository is an app scaffolded from `artisan-build/built-for-cloud-starter`; it is not the
-starter kit. Never open app pull requests against the starter kit or its nodeless upstream.
+## Phase and mode
 
-## What This Is
+- phase: pre-launch
+- default mode: A-autonomous
+- merge policy: merge on green CI; no human PR code review (Ed, 2026-10-11)
+- merge method: `gh pr merge --squash`
+- security-material override: PR2 (ingest) and PR5 (MCP) require an independent quality reviewer and
+  acceptance judge before merge.
 
-{{FILL: Describe the product, its users, the problem it solves, and its explicit non-goals.}}
+## Hard gate
 
-## Phase And Mode
+- command: `composer ready`
+- root ladder: IDE helper generation, Rector, Pint, Larastan/PHPStan, the complete app test suite,
+  Composer audit, then package checks.
+- package checks: each package receives an independent Composer install followed by Pint, PHPStan,
+  focused Pest tests, and Composer audit.
+- monorepo installs: install dependencies at the root and independently in every touched package.
 
-- phase: {{FILL: greenfield | building | launched}}
-- default mode: {{FILL: A-autonomous | B-human-merges}}
-- merge policy: {{FILL: State when changes may merge and whether human review is required.}}
-- merge method: {{FILL: State the exact gh command and branch deletion policy.}}
-
-## Hard Gate
-
-- command: `composer ready` (ide-helper regen + rector + pint + phpstan + pest + composer audit)
-- extra suites: {{FILL: none, or list them}}
-- monorepo: {{FILL: no, or describe the package layout}}
-
-The coordinator verifies the hard gate on the committed SHA with a clean tree.
+The coordinator runs the complete gate on a committed SHA with a clean tree. Implementers run focused
+tests plus static analysis and lint only.
 
 ## CI
 
-- status: {{FILL: verified | unverified}}
-- required jobs: {{FILL: Name the testing and static-analysis jobs that gate merges.}}
-- workflows: `.github/workflows/tests.yml` and `.github/workflows/lint.yml`
+- workflow: `.github/workflows/tests.yml`
+- status: unverified until the first PR run
+- required contexts:
+  - `root / PHP 8.5 / PostgreSQL 16`
+  - `package / wake-contracts / PHP 8.5`
+  - `package / wake-client / PHP 8.5`
+  - `package / wake-server / PHP 8.5`
+- release workflow: `.github/workflows/release.yml` splits all three packages on `v*` tags.
 
-Do not use CI as an autonomous merge gate until both testing and static analysis are verified.
+## Roles
 
-## Dependency Install
+Resolve implementer, quality reviewer, and acceptance judge roles from
+`~/Herd/brain/agents.json` using `~/Herd/brain/playbooks/resolve-agent-role.md`. This profile does not
+override Brain's role map.
 
-- command: `composer install --no-interaction --prefer-dist`
-- post-install: `cp .env.example .env && php artisan key:generate`
-- tests use in-memory SQLite through `phpunit.xml`
+## Ship details
 
-## Harness Map
+- branch naming: `feat/<slug>` (`fix/<slug>` for fixes and `chore/<slug>` for maintenance)
+- PR target repo: `artisan-build/wake`
+- package mirrors: future repositories `artisan-build/wake-contracts`, `artisan-build/wake-client`,
+  and `artisan-build/wake-server`; creating them is a release prerequisite, not part of a feature PR.
+- release command: the tag workflow runs `php artisan kibble:split --tag="${RELEASE_TAG}"`.
 
-- implementer: {{FILL: runtime and Solo agent_tool_id}}
-- quality reviewer: {{FILL: different model lineage and Solo agent_tool_id}}
-- acceptance judge: {{FILL: another model lineage and Solo agent_tool_id}}
+## Plan and coordination
 
-## Ship Details
+- plan location: `/Users/edgrosvenor/Herd/brain/projects/wake/PRD.md`, §13
+- Solo project: `wake` (id 85)
+- run log: a separate append-only scratchpad for each build
 
-- branch naming: `feat/<slug>` (`fix/<slug>` for fixes, `chore/<slug>` for maintenance)
-- PR target repo: {{FILL: owner/repo - REQUIRED}}
-- release or split steps: {{FILL: none, or describe them}}
+## Built for Cloud
 
-## Plan And Coordination
+- app role: a self-hosted central log sink installed in the customer's Laravel Cloud account.
+- manifest: `config/built-for-cloud.php`, owned by the root application.
+- deployment: use the `laravel-cloud-deploy` skill; never set variables supplied by Cloud resources.
 
-- plan location: {{FILL: Solo scratchpad or standing PRD path}}
-- Solo project: {{FILL: project name and ID - REQUIRED}}
-- run log: per-build scratchpad named `<branch>-run-log`
+## Stack notes
 
-## Built For Cloud App
-
-- app role: {{FILL: Describe how this app participates in the Built for Cloud ecosystem.}}
-- manifest: {{FILL: Record the manifest path and ownership once configured.}}
-- deployment: {{FILL: Record the Laravel Cloud environment conventions without secrets or app IDs.}}
-
-## Stack Notes
-
-- Laravel 13, Livewire 4, Flux 2, and PHP 8.3 or newer.
-- Nodeless by design: no Node, npm, Vite, or frontend build step.
-- Tailwind is served from `public/build/assets/app.css`; regenerate it only with
-  `php artisan tailwind:optimize` and commit the output.
-- `composer ready` regenerates committed IDE helper files. `.phpstorm.meta.php` remains ignored.
-- Keep `phpstan-baseline.neon` shrinking.
-- {{FILL: Add app-specific quirks and conventions, or delete this line if there are none.}}
+- PHP 8.5 in CI, Laravel 13, Livewire 4, and Flux 2.
+- PostgreSQL 16 is the application test database in CI.
+- The app is nodeless. Do not add Node, npm, Vite, or a frontend build step.
+- `composer ready` regenerates committed IDE helper files; `.phpstorm.meta.php` stays ignored.
+- Keep `phpstan-baseline.neon` shrinking and never baseline new errors to make a gate pass.

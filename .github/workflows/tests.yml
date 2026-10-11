@@ -1,25 +1,35 @@
-name: tests
+name: CI
 
 on:
   push:
     branches:
-      - develop
       - main
-      - master
-      - workos
   pull_request:
     branches:
-      - develop
       - main
-      - master
-      - workos
+
+permissions:
+  contents: read
 
 jobs:
-  ci:
+  root:
+    name: root / PHP 8.5 / PostgreSQL 16
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        php-version: ['8.5']
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: root
+          POSTGRES_DB: wake_test
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
       - name: Checkout code
@@ -30,9 +40,9 @@ jobs:
       - name: Setup PHP
         uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
         with:
-          php-version: ${{ matrix.php-version }}
+          php-version: '8.5'
           tools: composer:v2
-          coverage: xdebug
+          coverage: none
 
       - name: Install Dependencies
         run: composer install --no-interaction --prefer-dist --optimize-autoloader
@@ -46,16 +56,58 @@ jobs:
       - name: Run Rector
         run: composer rector:check
 
+      - name: Run Pint
+        run: composer test:lint
+
       - name: Run PHPStan
         run: composer stan
 
       - name: Run Tests
-        run: ./vendor/bin/pest
+        run: php artisan test
 
-      # Blocking, matching how `composer ready` already treats audit locally.
-      #
-      # Runs last on purpose: an advisory can be published against a dependency at any moment, with
-      # no commit here to trigger it, so this step can fail on a PR that changed nothing related.
-      # Keeping it after the tests means the test signal is still there when that happens.
       - name: Run Security Audit
+        run: composer audit
+
+  packages:
+    name: package / ${{ matrix.package }} / PHP 8.5
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package:
+          - wake-contracts
+          - wake-client
+          - wake-server
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+        with:
+          persist-credentials: false
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: '8.5'
+          tools: composer:v2
+          coverage: none
+
+      - name: Install package dependencies
+        working-directory: packages/${{ matrix.package }}
+        run: composer install --no-interaction --prefer-dist
+
+      - name: Run Pint
+        working-directory: packages/${{ matrix.package }}
+        run: composer lint:test
+
+      - name: Run PHPStan
+        working-directory: packages/${{ matrix.package }}
+        run: composer stan
+
+      - name: Run package tests
+        working-directory: packages/${{ matrix.package }}
+        run: composer test
+
+      - name: Run Security Audit
+        working-directory: packages/${{ matrix.package }}
         run: composer audit

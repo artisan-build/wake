@@ -10,7 +10,7 @@ CHANGELOG.md export-ignore
 /README.md export-ignore
 
 # These describe the KIT itself, so they must not ship into scaffolded projects — a project born
-# asserting "PR target repo: artisan-build/built-for-cloud-starter" sends agents at the wrong repository.
+# asserting the upstream template as the PR target sends agents to the wrong repository.
 # App-facing replacements live in stubs/ and are installed by post-create-project-cmd. Anchored with a
 # leading slash so stubs/CLAUDE.md is NOT caught by this rule.
 /CLAUDE.md export-ignore
@@ -29,7 +29,7 @@ CHANGELOG.md export-ignore
 /.github/workflows/dependabot-auto-merge.yml export-ignore
 
 # These exercise kit-only source state (stubs, Git metadata, and the export-ignored kit documents).
-# The generated app keeps the remaining application tests as its starter suite.
+# The generated app keeps the remaining application tests as its scaffold suite.
 /tests/Unit/BuiltForCloudSkillsTest.php export-ignore
 /tests/Unit/InstallStubsTest.php export-ignore
 /tests/Unit/StarterConventionsTest.php export-ignore

@@ -9,9 +9,10 @@ applications without sending the log corpus to a third-party service.
 
 ## What It Does
 
-This repository currently contains the initial Built for Cloud application scaffold. Log ingestion,
-DuckLake storage, the Laravel client package, the administration surface, and MCP tools are planned in
-the approved v1 build but are not implemented yet.
+This repository currently contains the Built for Cloud application and installable skeletons for the
+Wake contracts, Laravel client, and server packages. Log ingestion, DuckLake storage, the
+administration surface, and MCP tools are planned in the approved v1 build but are not implemented
+yet.
 
 ## Built For Cloud
 
@@ -50,7 +51,9 @@ are committed under `public/build`.
 composer ready
 ```
 
-Focused tests can be run with `php artisan test --filter=<test-name>`.
+Focused application tests can be run with `php artisan test --filter=<test-name>`. Each package has
+its own `composer test`, `composer lint:test`, and `composer stan` commands. Run every package check
+from the root with `composer packages:check`.
 
 ## Deployment
 

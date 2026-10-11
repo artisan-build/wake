@@ -82,6 +82,18 @@ SH);
     (new DuckDb)->commitBatch('01BATCH', [$row]);
 })->throwsNoExceptions();
 
+it('detects a committed batch through its batch id and pruned event days', function (): void {
+    file_put_contents($this->binary, <<<'SH'
+#!/bin/sh
+input="$(cat)"
+printf '%s' "$input" | grep -q "event_date IN (CAST('2026-10-10' AS DATE), CAST('2026-10-11' AS DATE))"
+printf '%s' "$input" | grep -q "batch_id = '01BATCH' LIMIT 1"
+printf '%s\n' '{"marker":"__WAKE_RESULT_START__"}' '{"committed":1}' '{"marker":"__WAKE_RESULT_END__"}'
+SH);
+
+    expect((new DuckDb)->batchCommitted('01BATCH', ['2026-10-10', '2026-10-11']))->toBeTrue();
+});
+
 it('rejects an insertion chunk above the hard bound', function (): void {
     $row = ['event_id' => 'x'];
 

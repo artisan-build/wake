@@ -17,7 +17,10 @@ final class MemoryLakeWriter implements LakeWriter
     public int $bootstraps = 0;
 
     /** @var array<string, true> */
-    public array $manifest = [];
+    public array $committedBatches = [];
+
+    /** @var list<array{batch_id: string, event_days: list<string>}> */
+    public array $checks = [];
 
     /** @var array<string, int> */
     public array $events = [];
@@ -27,16 +30,20 @@ final class MemoryLakeWriter implements LakeWriter
         $this->bootstraps++;
     }
 
+    public function batchCommitted(string $batchId, array $eventDays): bool
+    {
+        $this->checks[] = ['batch_id' => $batchId, 'event_days' => $eventDays];
+
+        return isset($this->committedBatches[$batchId]);
+    }
+
     public function commitBatch(string $batchId, array $rows): void
     {
-        if (isset($this->manifest[$batchId])) {
-            return;
-        }
         foreach ($rows as $row) {
             $eventId = (string) $row['event_id'];
             $this->events[$eventId] = ($this->events[$eventId] ?? 0) + 1;
         }
-        $this->manifest[$batchId] = true;
+        $this->committedBatches[$batchId] = true;
     }
 }
 
@@ -91,7 +98,7 @@ it('does not overlap a batch locked by another PostgreSQL worker', function (): 
     expect($lake->events)->toHaveKey($availableEvent)->not->toHaveKey($lockedEvent);
 });
 
-it('converges after each deterministic crash point', function (string $crashPoint): void {
+it('recovers each manifest state and applies every effect exactly once', function (string $crashPoint, string $expectedState): void {
     [$batchId, $eventId] = seedFlushBatch();
     $lake = new MemoryLakeWriter;
     $crashed = false;
@@ -103,7 +110,7 @@ it('converges after each deterministic crash point', function (string $crashPoin
     };
 
     expect(fn () => (new FlushLogBatches($lake, new ImmediateLakeWriterLock, $fault))->run(1))->toThrow(RuntimeException::class);
-    DB::table('wake_staging_batches')->where('batch_id', $batchId)->update(['claimed_at' => now()->subMinutes(6)]);
+    expect(DB::table('wake_flush_batches')->where('batch_id', $batchId)->value('state'))->toBe($expectedState);
     (new FlushLogBatches($lake, new ImmediateLakeWriterLock))->run(1);
 
     expect($lake->events[$eventId])->toBe(1)
@@ -113,11 +120,30 @@ it('converges after each deterministic crash point', function (string $crashPoin
         ->and(DB::table('wake_connected_apps')->value('flushed_rows'))->toBe(1)
         ->and(DB::table('wake_flush_batches')->where('batch_id', $batchId)->value('state'))->toBe('done')
         ->and(DB::table('wake_staging_batches')->where('batch_id', $batchId)->value('status'))->toBe(StagingBatchStatus::Flushed->value)
-        ->and(DB::table('wake_staging_batches')->where('batch_id', $batchId)->value('payload'))->toBeNull();
-})->with(['after lake transaction' => 'after_lake_commit', 'before PostgreSQL commit' => 'before_derived_commit']);
+        ->and(DB::table('wake_staging_batches')->where('batch_id', $batchId)->value('payload'))->toBeNull()
+        ->and($lake->checks)->toContain(['batch_id' => $batchId, 'event_days' => ['2026-10-11']]);
+})->with([
+    'claimed after lake transaction' => ['after_lake_commit', 'claimed'],
+    'lake committed before PostgreSQL commit' => ['before_derived_commit', 'lake_committed'],
+]);
+
+it('recovers unfinished manifests in deterministic oldest order before claiming pending rows', function (): void {
+    [$older] = seedFlushBatch('older', '2026-10-09T12:34:56.000000Z');
+    [$newer] = seedFlushBatch('newer', '2026-10-10T12:34:56.000000Z');
+    [$pending, $pendingEvent] = seedFlushBatch('pending', '2026-10-11T12:34:56.000000Z');
+    seedFlushManifest($older, 'claimed', '2026-10-09 00:00:00', ['2026-10-09']);
+    seedFlushManifest($newer, 'claimed', '2026-10-10 00:00:00', ['2026-10-10']);
+    DB::table('wake_staging_batches')->whereIn('batch_id', [$older, $newer])->update(['status' => 'flushing']);
+    $lake = new MemoryLakeWriter;
+
+    expect((new FlushLogBatches($lake, new ImmediateLakeWriterLock))->run(2))->toBe(['batches' => 2, 'rows' => 2])
+        ->and(array_column($lake->checks, 'batch_id'))->toBe([$older, $newer])
+        ->and(DB::table('wake_staging_batches')->where('batch_id', $pending)->value('status'))->toBe('pending')
+        ->and($lake->events)->not->toHaveKey($pendingEvent);
+});
 
 /** @return array{string, string} */
-function seedFlushBatch(string $idempotencyKey = 'flush-test'): array
+function seedFlushBatch(string $idempotencyKey = 'flush-test', string $occurredAt = '2026-10-11T12:34:56.000000Z'): array
 {
     $batchId = (string) Str::ulid();
     $eventId = (string) Str::ulid();
@@ -126,7 +152,7 @@ function seedFlushBatch(string $idempotencyKey = 'flush-test'): array
         'batch_id' => $batchId, 'app_id' => 'app-1', 'idempotency_key' => $idempotencyKey,
         'envelope_version' => 1, 'client_version' => 'test', 'dropped_count' => 0,
         'payload' => json_encode(['rows' => [[
-            'event_id' => $eventId, 'occurred_at' => '2026-10-11T12:34:56.000000Z',
+            'event_id' => $eventId, 'occurred_at' => $occurredAt,
             'level' => 'error', 'channel' => 'app', 'message' => 'boom', 'context' => [], 'extra' => [],
             'exception' => ['class' => 'RuntimeException', 'message' => 'boom', 'file' => '/app/a.php', 'line' => 1, 'trace' => ''],
             'environment' => 'testing', 'hostname' => 'host', 'correlation_id' => null,
@@ -136,4 +162,19 @@ function seedFlushBatch(string $idempotencyKey = 'flush-test'): array
     ]);
 
     return [$batchId, $eventId];
+}
+
+/** @param list<string> $eventDays */
+function seedFlushManifest(string $batchId, string $state, string $createdAt, array $eventDays): void
+{
+    DB::table('wake_flush_batches')->insert([
+        'batch_id' => $batchId,
+        'staging_batch_ids' => json_encode([$batchId], JSON_THROW_ON_ERROR),
+        'event_days' => json_encode($eventDays, JSON_THROW_ON_ERROR),
+        'state' => $state,
+        'claimed_at' => $createdAt,
+        'lake_committed_at' => $state === 'lake_committed' ? $createdAt : null,
+        'created_at' => $createdAt,
+        'updated_at' => $createdAt,
+    ]);
 }

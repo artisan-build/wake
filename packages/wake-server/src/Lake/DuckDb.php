@@ -64,6 +64,19 @@ final class DuckDb implements LakeMaintenance, LakeWriter
             SQL, 60);
     }
 
+    /** @param list<string> $eventDays */
+    public function batchCommitted(string $batchId, array $eventDays): bool
+    {
+        if ($eventDays === []) {
+            return false;
+        }
+
+        $days = implode(', ', array_map(fn (string $day): string => 'CAST('.$this->literal($day).' AS DATE)', $eventDays));
+        $rows = $this->query('SELECT 1 AS committed FROM lake.logs WHERE event_date IN ('.$days.') AND batch_id = '.$this->literal($batchId).' LIMIT 1;');
+
+        return $rows !== [];
+    }
+
     /** @param list<array<string, mixed>> $rows */
     public function commitBatch(string $batchId, array $rows): void
     {

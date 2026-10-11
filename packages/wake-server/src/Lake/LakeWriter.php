@@ -8,6 +8,9 @@ interface LakeWriter
 {
     public function bootstrap(): void;
 
+    /** @param list<string> $eventDays */
+    public function batchCommitted(string $batchId, array $eventDays): bool;
+
     /** @param list<array<string, mixed>> $rows */
     public function commitBatch(string $batchId, array $rows): void;
 }

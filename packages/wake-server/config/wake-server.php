@@ -8,6 +8,8 @@ return [
         'binary' => base_path('bin/duckdb'),
         'extension_directory' => base_path('var/duckdb-extensions'),
         'data_prefix' => 'ducklake/logs/',
+        'postgres_catalog' => false,
+        'data_path' => null,
         'threads' => 1,
         'memory_limit' => '384MB',
         'flush_batch_limit' => 20,

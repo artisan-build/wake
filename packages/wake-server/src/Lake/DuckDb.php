@@ -148,6 +148,15 @@ final class DuckDb implements LakeMaintenance, LakeWriter
         $settings = 'SET threads=1; SET memory_limit='.$this->literal('384MB').'; SET preserve_insertion_order=false; SET autoinstall_known_extensions=false; SET autoload_known_extensions=false;';
         $extensions = 'SET extension_directory='.$this->literal($this->configString('wake-server.lake.extension_directory')).'; LOAD ducklake; LOAD postgres; LOAD httpfs;';
 
+        if (config('wake-server.lake.postgres_catalog') === true) {
+            if (! is_array($database) || empty($database['host'])) {
+                throw new RuntimeException('The PostgreSQL DuckLake catalog requires a configured database.');
+            }
+            $dsn = $this->postgresDsn($database, $this->scalarString($database['sslmode'] ?? 'prefer', 'database sslmode'));
+
+            return "{$settings} {$extensions} ATTACH ".$this->literal('ducklake:postgres:'.$dsn).' AS lake (DATA_PATH '.$this->literal($this->configString('wake-server.lake.data_path')).', DATA_INLINING_ROW_LIMIT 0);';
+        }
+
         if (! config('wake-server.lake.cloud') || ! is_array($database) || empty($database['host']) || ! is_array($disk) || empty($disk['bucket'])) {
             $catalog = 'ducklake:'.storage_path('app/ducklake/catalog.ducklake');
             $data = storage_path('app/ducklake/data/');
@@ -166,17 +175,24 @@ final class DuckDb implements LakeMaintenance, LakeWriter
             $this->literal(! empty($disk['use_path_style_endpoint']) ? 'path' : 'vhost'),
             str_starts_with($endpoint, 'https://') ? 'true' : 'false',
         );
-        $dsn = sprintf(
-            'host=%s port=%s dbname=%s user=%s password=%s sslmode=require',
+        $dsn = $this->postgresDsn($database);
+        $data = 's3://'.$this->scalarString($disk['bucket'], 'S3 bucket').'/'.ltrim($this->configString('wake-server.lake.data_prefix'), '/');
+
+        return "{$settings} {$extensions} {$secret} ATTACH ".$this->literal('ducklake:postgres:'.$dsn).' AS lake (DATA_PATH '.$this->literal($data).', DATA_INLINING_ROW_LIMIT 0);';
+    }
+
+    /** @param array<mixed> $database */
+    private function postgresDsn(array $database, string $sslmode = 'require'): string
+    {
+        return sprintf(
+            'host=%s port=%s dbname=%s user=%s password=%s sslmode=%s',
             $this->scalarString($database['host'], 'database host'),
             $this->scalarString($database['port'] ?? 5432, 'database port'),
             $this->scalarString($database['database'] ?? '', 'database name'),
             $this->scalarString($database['username'] ?? '', 'database username'),
             $this->scalarString($database['password'] ?? '', 'database password'),
+            $sslmode,
         );
-        $data = 's3://'.$this->scalarString($disk['bucket'], 'S3 bucket').'/'.ltrim($this->configString('wake-server.lake.data_prefix'), '/');
-
-        return "{$settings} {$extensions} {$secret} ATTACH ".$this->literal('ducklake:postgres:'.$dsn).' AS lake (DATA_PATH '.$this->literal($data).', DATA_INLINING_ROW_LIMIT 0);';
     }
 
     private function process(string $format): Process

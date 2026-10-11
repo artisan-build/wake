@@ -148,3 +148,14 @@ it('rejects missing blank and unknown app arguments before resolving write colla
     expect($this->lake->rows)->toBe(2)
         ->and(AppActionEvent::query()->count())->toBe(0);
 });
+
+it('refuses a syntactically valid missing app before resolving write collaborators', function (): void {
+    app()->bind(DeleteAppLogs::class, static fn (): never => throw new LogicException('Delete service resolved for a missing app.'));
+
+    $response = callDeleteTool('/mcp/destructive', $this->credential->bearerHeader(), ['app' => 'missing'])->assertOk();
+    $response->assertJsonPath('result.isError', true)
+        ->assertJsonPath('result.content.0.text', 'The requested Wake app does not exist.');
+    expect($response->json('result._meta.two_phase.confirmation'))->toBeNull()
+        ->and($this->lake->rows)->toBe(2)
+        ->and(AppActionEvent::query()->count())->toBe(0);
+});

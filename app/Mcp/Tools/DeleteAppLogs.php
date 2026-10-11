@@ -17,6 +17,7 @@ use ArtisanBuild\BuiltForCloud\Mcp\ToolClassification;
 use ArtisanBuild\BuiltForCloud\Mcp\ToolEffect;
 use ArtisanBuild\BuiltForCloud\Mcp\TwoPhase;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
+use Illuminate\Support\Facades\DB;
 use Laravel\Mcp\Request;
 use Laravel\Mcp\Response;
 use Laravel\Mcp\Server\Tools\Annotations\IsDestructive;
@@ -40,6 +41,9 @@ final class DeleteAppLogs extends WakeTool
     {
         $this->authorize();
         $app = $this->app($request);
+        if ($app === null) {
+            return $this->missingApp();
+        }
 
         return Response::json(resolve(DeleteAppLogsService::class)->preview($app));
     }
@@ -48,6 +52,9 @@ final class DeleteAppLogs extends WakeTool
     {
         $principal = $this->authorize();
         $app = $this->app($request);
+        if ($app === null) {
+            return $this->missingApp();
+        }
         $service = resolve(DeleteAppLogsService::class);
         $recorder = resolve(AppActionRecorder::class);
         $actor = AppActionActor::fromActingPrincipal($principal);
@@ -59,12 +66,19 @@ final class DeleteAppLogs extends WakeTool
         )));
     }
 
-    private function app(Request $request): string
+    private function app(Request $request): ?string
     {
         $validated = $this->validate($request, [
             'app' => ['required', 'string', 'min:1', 'max:255'],
         ], ['app']);
 
-        return (string) $validated['app'];
+        $app = (string) $validated['app'];
+
+        return DB::table('wake_connected_apps')->where('id', $app)->exists() ? $app : null;
+    }
+
+    private function missingApp(): Response
+    {
+        return Response::error('The requested Wake app does not exist.');
     }
 }

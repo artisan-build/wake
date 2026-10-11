@@ -131,6 +131,42 @@ it('returns the original receipt for a changed replay without consuming counters
         ->and($app->rejected_batches)->toBe(0);
 });
 
+it('rolls back staging cap and accepted health when acceptance fails before commit', function (): void {
+    $app = wakeConnectedApp('app-rollback', [
+        'accepted_rows' => 10,
+        'dropped_rows' => 20,
+        'last_client_version' => 'before-failure',
+    ]);
+    wakeCredential($app->id, 'rollback-secret');
+
+    $armed = true;
+    ConnectedApp::saved(function () use (&$armed): void {
+        if ($armed) {
+            $armed = false;
+
+            throw new RuntimeException('Deterministic failure before ingest commit.');
+        }
+    });
+
+    $this->withoutExceptionHandling();
+
+    expect(fn () => wakePost(
+        $this,
+        'rollback-secret',
+        'rollback-key',
+        wakeEnvelope('rollback-key', 3, 7, 'after-failure'),
+    ))->toThrow(RuntimeException::class, 'Deterministic failure before ingest commit.');
+
+    $app->refresh();
+
+    expect(StagingBatch::query()->where('app_id', $app->id)->count())->toBe(0)
+        ->and(DB::table('wake_ingest_windows')->where('app_id', $app->id)->count())->toBe(0)
+        ->and($app->accepted_rows)->toBe(10)
+        ->and($app->dropped_rows)->toBe(20)
+        ->and($app->last_seen_at)->toBeNull()
+        ->and($app->last_client_version)->toBe('before-failure');
+});
+
 it('returns 401 for missing unknown revoked and concurrently revoked credentials', function (): void {
     $app = wakeConnectedApp('app-unauthorized');
     wakeCredential($app->id, 'revoked-secret', ['revoked_at' => now()]);

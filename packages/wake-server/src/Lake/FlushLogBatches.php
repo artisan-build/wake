@@ -23,7 +23,8 @@ final class FlushLogBatches
             ->where('claimed_at', '<', now()->subMinutes(5))
             ->update(['status' => StagingBatchStatus::Pending, 'claimed_at' => null]);
 
-        $batches = $this->claim($limit ?? (int) config('wake-server.lake.flush_batch_limit', 20));
+        $configuredLimit = config('wake-server.lake.flush_batch_limit', 20);
+        $batches = $this->claim($limit ?? (is_int($configuredLimit) ? $configuredLimit : 20));
         if ($batches->isEmpty()) {
             return ['batches' => 0, 'rows' => 0];
         }
@@ -45,7 +46,7 @@ final class FlushLogBatches
     /** @return Collection<int, StagingBatch> */
     private function claim(int $limit): Collection
     {
-        return DB::transaction(function () use ($limit): Collection {
+        $result = DB::transaction(function () use ($limit): Collection {
             /** @var Collection<int, StagingBatch> $claimed */
             $claimed = StagingBatch::query()->where('status', StagingBatchStatus::Pending)
                 ->oldest('created_at')->limit(max(1, $limit))->lock('FOR UPDATE SKIP LOCKED')->get();
@@ -55,19 +56,41 @@ final class FlushLogBatches
 
             return $claimed;
         }, 3);
+        if (! $result instanceof Collection) {
+            throw new \RuntimeException('The staging claim returned an invalid result.');
+        }
+
+        return $result->map(function (mixed $batch): StagingBatch {
+            if (! $batch instanceof StagingBatch) {
+                throw new \RuntimeException('The staging claim returned an invalid batch.');
+            }
+
+            return $batch;
+        })->values();
     }
 
     /** @return list<array<string, mixed>> */
     private function events(StagingBatch $batch): array
     {
         $payload = $batch->payload;
-        $events = is_array($payload['rows'] ?? null) ? $payload['rows'] : [];
+        $rawEvents = is_array($payload['rows'] ?? null) ? $payload['rows'] : [];
+        $events = [];
+        foreach ($rawEvents as $event) {
+            if (! is_array($event)) {
+                throw new \RuntimeException('A staged event is not an object.');
+            }
+            $normalized = [];
+            foreach ($event as $key => $value) {
+                if (! is_string($key)) {
+                    throw new \RuntimeException('A staged event has a non-string key.');
+                }
+                $normalized[$key] = $value;
+            }
+            $normalized['app_id'] = (string) $batch->app_id;
+            $events[] = $normalized;
+        }
 
-        return array_map(function (array $event) use ($batch): array {
-            $event['app_id'] = (string) $batch->app_id;
-
-            return $event;
-        }, $events);
+        return $events;
     }
 
     /** @param list<array<string, mixed>> $events */
@@ -85,7 +108,7 @@ final class FlushLogBatches
 
             $hourly = [];
             foreach ($events as $event) {
-                $at = Carbon::parse((string) $event['occurred_at'])->utc();
+                $at = Carbon::parse($this->eventString($event, 'occurred_at'))->utc();
                 DB::table('wake_event_locators')->insertOrIgnore([
                     'event_id' => $event['event_id'], 'app_id' => $batch->app_id,
                     'event_date' => $at->toDateString(), 'occurred_at' => $at,
@@ -103,7 +126,9 @@ final class FlushLogBatches
                     ]);
                 }
                 $hour = $at->copy()->startOfHour();
-                $key = $batch->app_id.'|'.$event['environment'].'|'.$event['level'].'|'.$hour->toIso8601String();
+                $environment = $this->eventString($event, 'environment');
+                $level = $this->eventString($event, 'level');
+                $key = $batch->app_id.'|'.$environment.'|'.$level.'|'.$hour->toIso8601String();
                 $hourly[$key] = ['app_id' => $batch->app_id, 'environment' => $event['environment'], 'level' => $event['level'], 'hour' => $hour, 'count' => ($hourly[$key]['count'] ?? 0) + 1];
             }
             foreach ($hourly as $count) {
@@ -119,5 +144,16 @@ final class FlushLogBatches
     private function hit(string $point, string $batchId): void
     {
         ($this->fault)?->__invoke($point, $batchId);
+    }
+
+    /** @param array<string, mixed> $event */
+    private function eventString(array $event, string $key): string
+    {
+        $value = $event[$key] ?? null;
+        if (! is_string($value)) {
+            throw new \RuntimeException("A staged event has an invalid {$key}.");
+        }
+
+        return $value;
     }
 }

@@ -8,8 +8,10 @@ use RuntimeException;
 use SensitiveParameter;
 use Symfony\Component\Process\Process;
 
-final class DuckDb
+final class DuckDb implements LakeWriter
 {
+    public const int MAX_INSERT_ROWS = 100_000;
+
     /** @return list<array<string, mixed>> */
     public function query(#[SensitiveParameter] string $sql, int $timeout = 20): array
     {
@@ -58,12 +60,48 @@ final class DuckDb
             ALTER TABLE lake.logs SET PARTITIONED BY (event_date);
             ALTER TABLE lake.logs SET SORTED BY (app_id ASC, occurred_at ASC);
             CALL lake.set_option('target_file_size', '32MB', table_name => 'logs');
+            CREATE TABLE IF NOT EXISTS lake.flush_manifest (
+                batch_id VARCHAR PRIMARY KEY,
+                committed_at TIMESTAMPTZ NOT NULL
+            );
             SQL, 60);
+    }
+
+    /** @param list<array<string, mixed>> $rows */
+    public function commitBatch(string $batchId, array $rows): void
+    {
+        if (count($rows) > self::MAX_INSERT_ROWS) {
+            throw new RuntimeException('A DuckLake insertion chunk cannot exceed 100000 events.');
+        }
+
+        $values = array_map(fn (array $row): string => $this->rowSql($batchId, $row), $rows);
+        $batch = $this->literal($batchId);
+        $insert = $values === [] ? '' : 'INSERT INTO lake.logs SELECT * FROM (VALUES '.implode(",\n", $values).') AS incoming(batch_id,event_id,app_id,event_date,occurred_at,level,channel,message,context,extra,exception,environment,hostname,correlation_id,ingested_at) WHERE NOT EXISTS (SELECT 1 FROM lake.flush_manifest WHERE batch_id = '.$batch.');';
+
+        $this->query("BEGIN TRANSACTION;\n{$insert}\nINSERT INTO lake.flush_manifest SELECT {$batch}, now() WHERE NOT EXISTS (SELECT 1 FROM lake.flush_manifest WHERE batch_id = {$batch});\nCOMMIT;", 120);
     }
 
     public function literal(?string $value): string
     {
         return $value === null ? 'NULL' : "'".str_replace("'", "''", $value)."'";
+    }
+
+    /** @param array<string, mixed> $row */
+    private function rowSql(string $batchId, array $row): string
+    {
+        $json = static fn (mixed $value): string => json_encode($value, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        $occurredAt = (string) $row['occurred_at'];
+
+        return sprintf(
+            '(%s,%s,%s,CAST(%s AS TIMESTAMPTZ)::DATE,CAST(%s AS TIMESTAMPTZ),%s,%s,%s,CAST(%s AS JSON),CAST(%s AS JSON),%s,%s,%s,%s,now())',
+            $this->literal($batchId), $this->literal((string) $row['event_id']), $this->literal((string) $row['app_id']),
+            $this->literal($occurredAt), $this->literal($occurredAt), $this->literal((string) $row['level']),
+            $this->literal((string) $row['channel']), $this->literal((string) $row['message']),
+            $this->literal($json($row['context'])), $this->literal($json($row['extra'])),
+            $row['exception'] === null ? 'NULL' : 'CAST('.$this->literal($json($row['exception'])).' AS JSON)',
+            $this->literal((string) $row['environment']), $this->literal((string) $row['hostname']),
+            $this->literal(isset($row['correlation_id']) ? (string) $row['correlation_id'] : null),
+        );
     }
 
     private function preamble(): string

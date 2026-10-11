@@ -62,3 +62,29 @@ SH);
 
     (new DuckDb)->bootstrap();
 })->throwsNoExceptions();
+
+it('commits lake rows and the batch marker in one bounded transaction', function (): void {
+    file_put_contents($this->binary, <<<'SH'
+#!/bin/sh
+input="$(cat)"
+printf '%s' "$input" | grep -q 'BEGIN TRANSACTION'
+printf '%s' "$input" | grep -q 'INSERT INTO lake.flush_manifest'
+printf '%s' "$input" | grep -q 'WHERE NOT EXISTS (SELECT 1 FROM lake.flush_manifest'
+printf '%s' "$input" | grep -q 'COMMIT;'
+printf '%s\n' '{"marker":"__WAKE_RESULT_START__"}' '{"marker":"__WAKE_RESULT_END__"}'
+SH);
+    $row = [
+        'event_id' => '01ABC', 'app_id' => 'app-1', 'occurred_at' => '2026-10-11T12:00:00.000000Z',
+        'level' => 'info', 'channel' => 'app', 'message' => 'ok', 'context' => [], 'extra' => [],
+        'exception' => null, 'environment' => 'testing', 'hostname' => 'host', 'correlation_id' => null,
+    ];
+
+    (new DuckDb)->commitBatch('01BATCH', [$row]);
+})->throwsNoExceptions();
+
+it('rejects an insertion chunk above the hard bound', function (): void {
+    $row = ['event_id' => 'x'];
+
+    expect(fn () => (new DuckDb)->commitBatch('batch', array_fill(0, 100_001, $row)))
+        ->toThrow(RuntimeException::class, 'cannot exceed 100000');
+});

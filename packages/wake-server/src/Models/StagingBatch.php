@@ -15,7 +15,7 @@ use Illuminate\Database\Eloquent\Model;
  * @property int $envelope_version
  * @property string $client_version
  * @property int $dropped_count
- * @property array<string, mixed> $payload
+ * @property array<string, mixed>|null $payload
  * @property int $row_count
  * @property StagingBatchStatus $status
  * @property CarbonInterface $created_at

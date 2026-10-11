@@ -1,5 +1,4 @@
 /.phpunit.cache
-/.cloud/
 /node_modules
 /public/fonts-manifest.dev.json
 /public/hot

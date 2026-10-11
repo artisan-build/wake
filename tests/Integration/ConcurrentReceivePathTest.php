@@ -7,7 +7,6 @@ use ArtisanBuild\BuiltForCloud\CredentialKind;
 use ArtisanBuild\BuiltForCloud\CredentialPurpose;
 use ArtisanBuild\BuiltForCloud\CredentialStatus;
 use ArtisanBuild\BuiltForCloud\SubjectType;
-use ArtisanBuild\WakeContracts\IngestProtocol;
 use ArtisanBuild\WakeServer\Models\ConnectedApp;
 use ArtisanBuild\WakeServer\Models\StagingBatch;
 use Illuminate\Support\Facades\Artisan;
@@ -157,13 +156,8 @@ it('serializes concurrent first submissions for one idempotency key', function (
 });
 
 it('admits exactly one concurrent new key at the final cap slot', function (): void {
-    $app = concurrentApp('cap-race-app', ['batches_per_minute' => 2, 'events_per_minute' => 2]);
+    $app = concurrentApp('cap-race-app', ['batches_per_minute' => 1, 'events_per_minute' => 1]);
     concurrentCredential($app->id, 'cap-race-secret');
-
-    $this->postJson(IngestProtocol::PATH, concurrentEnvelope('cap-seed'), [
-        'Authorization' => 'Bearer cap-race-secret',
-        IngestProtocol::IDEMPOTENCY_HEADER => 'cap-seed',
-    ])->assertAccepted();
 
     $responses = runConcurrentIngest([
         ['secret' => 'cap-race-secret', 'key' => 'cap-race-a', 'body' => concurrentEnvelope('cap-race-a')],
@@ -173,12 +167,12 @@ it('admits exactly one concurrent new key at the final cap slot', function (): v
     $statuses = array_column($responses, 'status');
     sort($statuses);
     expect($statuses)->toBe([202, 429])
-        ->and(StagingBatch::query()->where('app_id', $app->id)->count())->toBe(2)
-        ->and(DB::table('wake_ingest_windows')->where('app_id', $app->id)->value('batch_count'))->toBe(2)
-        ->and(DB::table('wake_ingest_windows')->where('app_id', $app->id)->value('event_count'))->toBe(2);
+        ->and(StagingBatch::query()->where('app_id', $app->id)->count())->toBe(1)
+        ->and(DB::table('wake_ingest_windows')->where('app_id', $app->id)->value('batch_count'))->toBe(1)
+        ->and(DB::table('wake_ingest_windows')->where('app_id', $app->id)->value('event_count'))->toBe(1);
 
     $app->refresh();
-    expect($app->accepted_rows)->toBe(2)
+    expect($app->accepted_rows)->toBe(1)
         ->and($app->rate_limit_hits)->toBe(1)
         ->and($app->rejected_batches)->toBe(1);
 });

@@ -28,6 +28,7 @@ SH);
 it('sends cloud credentials on stdin and redacts failures', function (): void {
     file_put_contents($this->binary, <<<'SH'
 #!/bin/sh
+set -e
 input="$(cat)"
 printf '%s' "$input" | grep -q 'db-private-value'
 printf '%s' "$input" | grep -q 's3-private-value'
@@ -64,6 +65,7 @@ it('rejects an unsafe PostgreSQL metadata schema identifier', function (): void 
 it('defines the full v1 lake schema and physical layout', function (): void {
     file_put_contents($this->binary, <<<'SH'
 #!/bin/sh
+set -e
 input="$(cat)"
 printf '%s' "$input" | grep -q 'batch_id VARCHAR NOT NULL'
 printf '%s' "$input" | grep -q 'exception JSON'
@@ -80,6 +82,7 @@ SH);
 it('commits one bounded batch transaction without a lake-side manifest', function (): void {
     file_put_contents($this->binary, <<<'SH'
 #!/bin/sh
+set -e
 input="$(cat)"
 printf '%s' "$input" | grep -q 'BEGIN TRANSACTION'
 if printf '%s' "$input" | grep -q 'lake.flush_manifest'; then exit 1; fi
@@ -98,6 +101,7 @@ SH);
 it('detects a committed batch through its batch id and pruned event days', function (): void {
     file_put_contents($this->binary, <<<'SH'
 #!/bin/sh
+set -e
 input="$(cat)"
 printf '%s' "$input" | grep -q "event_date IN (CAST('2026-10-10' AS DATE), CAST('2026-10-11' AS DATE))"
 printf '%s' "$input" | grep -q "batch_id = '01BATCH' LIMIT 1"
@@ -117,19 +121,26 @@ it('rejects an insertion chunk above the hard bound', function (): void {
 it('caps adjacent-file compaction at three outputs', function (): void {
     file_put_contents($this->binary, <<<'SH'
 #!/bin/sh
+set -e
 input="$(cat)"
-if printf '%s' "$input" | grep -q 'ducklake_merge_adjacent_files'; then
-  printf '%s' "$input" | grep -q 'max_compacted_files => 3'
-fi
-printf '%s\n' '{"marker":"__WAKE_RESULT_START__"}' '{"files":4}' '{"marker":"__WAKE_RESULT_END__"}'
+case "$input" in
+  *"ducklake_merge_adjacent_files"*)
+    printf '%s' "$input" | grep -q 'max_compacted_files => 3'
+    files=3
+    ;;
+  *"ducklake_list_files"*) files=4 ;;
+  *) exit 1 ;;
+esac
+printf '%s\n' '{"marker":"__WAKE_RESULT_START__"}' "{\"files\":$files}" '{"marker":"__WAKE_RESULT_END__"}'
 SH);
 
-    expect((new DuckDb)->compact())->toBe(['files_before' => 4, 'files_after' => 4]);
+    expect((new DuckDb)->compact())->toBe(['files_before' => 4, 'files_after' => 3]);
 });
 
 it('uses the data cutoff for deletion then expires snapshots through maintenance and forces cleanup', function (): void {
     file_put_contents($this->binary, <<<'SH'
 #!/bin/sh
+set -e
 input="$(cat)"
 case "$input" in
   *"DELETE FROM lake.logs"*) printf '%s' "$input" | grep -q "event_date < CAST('2026-09-11' AS DATE)" ;;

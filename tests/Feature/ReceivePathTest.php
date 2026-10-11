@@ -7,12 +7,13 @@ use ArtisanBuild\BuiltForCloud\CredentialKind;
 use ArtisanBuild\BuiltForCloud\CredentialPurpose;
 use ArtisanBuild\BuiltForCloud\CredentialStatus;
 use ArtisanBuild\BuiltForCloud\SubjectType;
-use ArtisanBuild\WakeContracts\IngestProtocol;
 use ArtisanBuild\WakeContracts\IngestEnvelope;
+use ArtisanBuild\WakeContracts\IngestProtocol;
 use ArtisanBuild\WakeServer\Models\ConnectedApp;
 use ArtisanBuild\WakeServer\Models\StagingBatch;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Illuminate\Testing\TestResponse;
 
 function wakeConnectedApp(string $id, array $attributes = []): ConnectedApp
 {
@@ -63,7 +64,7 @@ function wakeEnvelope(string $key, int $rows = 1, int $dropped = 0, string $clie
 }
 
 /** @param array<string, mixed> $body */
-function wakePost(object $test, string $secret, string $key, array $body): Illuminate\Testing\TestResponse
+function wakePost(object $test, string $secret, string $key, array $body): TestResponse
 {
     return $test->postJson(IngestProtocol::PATH, $body, [
         'Authorization' => "Bearer {$secret}",

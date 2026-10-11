@@ -14,12 +14,13 @@ use ArtisanBuild\WakeServer\Models\ConnectedApp;
 use ArtisanBuild\WakeServer\Models\StagingBatch;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use RuntimeException;
 
 final class IngestService
 {
     public function accept(string $appId, IngestEnvelope $envelope): IngestDecision
     {
-        return DB::transaction(function () use ($appId, $envelope): IngestDecision {
+        $decision = DB::transaction(function () use ($appId, $envelope): IngestDecision {
             /** @var ConnectedApp|null $app */
             $app = ConnectedApp::query()->whereKey($appId)->lockForUpdate()->first();
 
@@ -48,15 +49,17 @@ final class IngestService
                 ->lockForUpdate()
                 ->first(['batch_count', 'event_count']);
 
-            $batchCount = (int) ($window->batch_count ?? 0);
-            $eventCount = (int) ($window->event_count ?? 0);
+            $batchCount = $this->databaseInteger($window->batch_count ?? null);
+            $eventCount = $this->databaseInteger($window->event_count ?? null);
             $rowCount = count($envelope->rows);
             $batchLimit = $app->batches_per_minute ?? $this->defaultLimit('batches_per_minute');
             $eventLimit = $app->events_per_minute ?? $this->defaultLimit('events_per_minute');
 
             if ($batchCount + 1 > $batchLimit || $eventCount + $rowCount > $eventLimit) {
-                $app->increment('rejected_batches');
-                $app->increment('rate_limit_hits');
+                $app->forceFill([
+                    'rejected_batches' => $app->rejected_batches + 1,
+                    'rate_limit_hits' => $app->rate_limit_hits + 1,
+                ])->save();
 
                 $retryAfter = max(1, 60 - (int) $now->format('s'));
                 $error = new ErrorResponse(
@@ -104,6 +107,12 @@ final class IngestService
 
             return $this->receipt($batch, false);
         }, 3);
+
+        if (! $decision instanceof IngestDecision) {
+            throw new RuntimeException('Ingest transaction returned an invalid decision.');
+        }
+
+        return $decision;
     }
 
     public function duplicate(string $appId, string $idempotencyKey): ?IngestDecision
@@ -150,6 +159,16 @@ final class IngestService
         return is_int($value) && $value > 0 ? $value : match ($key) {
             'batches_per_minute' => 120,
             'events_per_minute' => 50_000,
+            default => throw new RuntimeException("Unknown ingest limit {$key}."),
         };
+    }
+
+    private function databaseInteger(mixed $value): int
+    {
+        if (is_int($value)) {
+            return $value;
+        }
+
+        return is_string($value) && ctype_digit($value) ? (int) $value : 0;
     }
 }

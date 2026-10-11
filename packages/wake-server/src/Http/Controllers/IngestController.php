@@ -61,7 +61,10 @@ final class IngestController
             return $this->error(413, ErrorCode::PayloadTooLarge, 'Request body exceeds 1048576 bytes.');
         }
 
-        $contentType = strtolower(trim(explode(';', (string) $request->header(IngestProtocol::CONTENT_TYPE_HEADER), 2)[0]));
+        $contentTypeHeader = $request->header(IngestProtocol::CONTENT_TYPE_HEADER);
+        $contentType = is_string($contentTypeHeader)
+            ? strtolower(trim(explode(';', $contentTypeHeader, 2)[0]))
+            : '';
         if ($contentType !== IngestProtocol::CONTENT_TYPE) {
             $this->ingest->recordRejection($appId);
 
@@ -70,10 +73,8 @@ final class IngestController
 
         try {
             $envelope = IngestEnvelope::fromJson($body);
-            IngestProtocol::assertIdempotencyHeader(
-                (string) $request->header(IngestProtocol::IDEMPOTENCY_HEADER),
-                $envelope,
-            );
+            $idempotencyHeader = $request->header(IngestProtocol::IDEMPOTENCY_HEADER);
+            IngestProtocol::assertIdempotencyHeader(is_string($idempotencyHeader) ? $idempotencyHeader : '', $envelope);
         } catch (ContractValidationException $exception) {
             $this->ingest->recordRejection($appId);
 

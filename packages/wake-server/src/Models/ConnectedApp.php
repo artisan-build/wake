@@ -4,8 +4,21 @@ declare(strict_types=1);
 
 namespace ArtisanBuild\WakeServer\Models;
 
+use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Model;
 
+/**
+ * @property string $id
+ * @property bool $enabled
+ * @property int|null $batches_per_minute
+ * @property int|null $events_per_minute
+ * @property int $accepted_rows
+ * @property int $dropped_rows
+ * @property int $rejected_batches
+ * @property int $rate_limit_hits
+ * @property CarbonInterface|null $last_seen_at
+ * @property string|null $last_client_version
+ */
 final class ConnectedApp extends Model
 {
     protected $table = 'wake_connected_apps';

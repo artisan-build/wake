@@ -62,6 +62,16 @@ override Brain's role map.
 - manifest: `config/built-for-cloud.php`, owned by the root application.
 - deployment: use the `laravel-cloud-deploy` skill; never set variables supplied by Cloud resources.
 
+## Migration immutability
+
+- **Until the first release tag, the Wake Cloud environment is disposable.** When a candidate changes an existing
+  migration, reset that environment's database and lake state before the smoke instead of writing upgrade migrations:
+  `migrate:fresh` on the Wake environment (never any other app), drop the DuckLake catalog tables, and delete the lake's
+  data path in the `wake-production` bucket. Confirm the environment ID is `env-a2f52d4e-a4e6-4a6a-96b4-a04ac506e881`
+  before running anything destructive. Synthetic data only; nothing else may be touched.
+- **From the first release tag on, migrations are immutable** and every schema change is a new additive migration.
+  The immutability guard belongs then, not now; note it as a release prerequisite.
+
 ## Stack notes
 
 - PHP 8.5 in CI, Laravel 13, Livewire 4, and Flux 2.

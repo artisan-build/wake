@@ -20,7 +20,9 @@ return new class extends Migration
             $table->unsignedBigInteger('dropped_rows')->default(0);
             $table->unsignedBigInteger('rejected_batches')->default(0);
             $table->unsignedBigInteger('rate_limit_hits')->default(0);
+            $table->unsignedBigInteger('flushed_rows')->default(0);
             $table->timestampTz('last_seen_at', 6)->nullable();
+            $table->timestampTz('last_flushed_at', 6)->nullable();
             $table->string('last_client_version', 64)->nullable();
             $table->timestampsTz(6);
         });
@@ -32,7 +34,7 @@ return new class extends Migration
             $table->smallInteger('envelope_version');
             $table->string('client_version', 64);
             $table->unsignedBigInteger('dropped_count');
-            $table->jsonb('payload');
+            $table->jsonb('payload')->nullable();
             $table->unsignedSmallInteger('row_count');
             $table->string('status', 16);
             $table->timestampTz('created_at', 6);

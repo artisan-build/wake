@@ -1,5 +1,4 @@
 /.phpunit.cache
-/.cloud/
 /node_modules
 /public/fonts-manifest.dev.json
 /public/hot
@@ -7,6 +6,8 @@
 /storage/*.key
 /storage/pail
 /vendor
+/bin/duckdb
+/var/duckdb-extensions/
 /packages/*/composer.lock
 /packages/*/vendor/
 .env

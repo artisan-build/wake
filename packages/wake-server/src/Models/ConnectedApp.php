@@ -16,7 +16,9 @@ use Illuminate\Database\Eloquent\Model;
  * @property int $dropped_rows
  * @property int $rejected_batches
  * @property int $rate_limit_hits
+ * @property int $flushed_rows
  * @property CarbonInterface|null $last_seen_at
+ * @property CarbonInterface|null $last_flushed_at
  * @property string|null $last_client_version
  */
 final class ConnectedApp extends Model
@@ -40,7 +42,9 @@ final class ConnectedApp extends Model
             'dropped_rows' => 'integer',
             'rejected_batches' => 'integer',
             'rate_limit_hits' => 'integer',
+            'flushed_rows' => 'integer',
             'last_seen_at' => 'immutable_datetime',
+            'last_flushed_at' => 'immutable_datetime',
         ];
     }
 }

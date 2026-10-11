@@ -10,6 +10,7 @@ use Illuminate\Foundation\Testing\DatabaseMigrations;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
+use Symfony\Component\Process\Process;
 
 uses(DatabaseMigrations::class);
 
@@ -87,6 +88,81 @@ it('converges exactly once after a real lake commit crash', function (): void {
         ->and(DB::table('wake_staging_batches')->where('batch_id', $batchId)->value('payload'))->toBeNull();
 });
 
+it('rolls back every derived effect before commit and converges exactly once on retry', function (): void {
+    [$batchId, $eventId] = seedRealFlushBatch();
+    $lake = app(DuckDb::class);
+    $fault = static function (string $point): void {
+        if ($point === 'before_derived_commit') {
+            throw new RuntimeException('Injected before_derived_commit');
+        }
+    };
+
+    expect(fn () => (new FlushLogBatches($lake, app(LakeWriterLock::class), $fault))->run(1))
+        ->toThrow(RuntimeException::class, 'Injected before_derived_commit');
+    expect(DB::table('wake_flush_batches')->where('batch_id', $batchId)->value('state'))->toBe('lake_committed')
+        ->and(realLakeBatchRows($lake, $batchId))->toBe(1)
+        ->and(DB::table('wake_event_locators')->count())->toBe(0)
+        ->and(DB::table('wake_error_events')->count())->toBe(0)
+        ->and(DB::table('wake_hourly_counts')->count())->toBe(0)
+        ->and(DB::table('wake_connected_apps')->value('flushed_rows'))->toBe(0)
+        ->and(DB::table('wake_staging_batches')->where('batch_id', $batchId)->value('status'))->toBe('flushing')
+        ->and(DB::table('wake_staging_batches')->where('batch_id', $batchId)->value('payload'))->not->toBeNull();
+
+    (new FlushLogBatches($lake, app(LakeWriterLock::class)))->run(1);
+    expect(realLakeBatchRows($lake, $batchId))->toBe(1)
+        ->and(DB::table('wake_event_locators')->where('event_id', $eventId)->count())->toBe(1)
+        ->and(DB::table('wake_error_events')->where('event_id', $eventId)->count())->toBe(1)
+        ->and(DB::table('wake_hourly_counts')->value('count'))->toBe(1)
+        ->and(DB::table('wake_connected_apps')->value('flushed_rows'))->toBe(1)
+        ->and(DB::table('wake_flush_batches')->where('batch_id', $batchId)->value('state'))->toBe('done')
+        ->and(DB::table('wake_staging_batches')->where('batch_id', $batchId)->value('status'))->toBe('flushed')
+        ->and(DB::table('wake_staging_batches')->where('batch_id', $batchId)->value('payload'))->toBeNull();
+});
+
+it('allows only one synchronized independent flusher to perform real lake work', function (): void {
+    [$batchId, $eventId] = seedRealFlushBatch();
+    $coordination = storage_path('framework/testing/workers/'.$this->catalogId);
+    File::ensureDirectoryExists($coordination);
+    $go = $coordination.'/go';
+    $processes = [];
+    $environment = realFlushWorkerEnvironment();
+
+    for ($worker = 1; $worker <= 2; $worker++) {
+        $ready = "{$coordination}/ready-{$worker}";
+        $result = "{$coordination}/result-{$worker}.json";
+        $process = new Process([
+            PHP_BINARY, base_path('tests/Fixtures/real-lake-flush-worker.php'),
+            $ready, $go, $result, $this->catalogId, $this->dataPath,
+        ], base_path(), $environment);
+        $process->start();
+        $processes[] = ['process' => $process, 'ready' => $ready, 'result' => $result];
+    }
+
+    try {
+        waitForRealFlushFiles(array_column($processes, 'ready'));
+        touch($go);
+        foreach ($processes as $worker) {
+            $worker['process']->wait();
+            expect($worker['process']->isSuccessful())->toBeTrue($worker['process']->getErrorOutput());
+        }
+        $results = array_map(fn (array $worker): array => json_decode((string) file_get_contents($worker['result']), true, 8, JSON_THROW_ON_ERROR), $processes);
+        sort($results);
+
+        expect(array_column($results, 'batches'))->toBe([0, 1])
+            ->and(realLakeBatchRows(app(DuckDb::class), $batchId))->toBe(1)
+            ->and(DB::table('wake_event_locators')->where('event_id', $eventId)->count())->toBe(1)
+            ->and(DB::table('wake_error_events')->where('event_id', $eventId)->count())->toBe(1)
+            ->and(DB::table('wake_hourly_counts')->value('count'))->toBe(1)
+            ->and(DB::table('wake_connected_apps')->value('flushed_rows'))->toBe(1)
+            ->and(DB::table('wake_flush_batches')->where('batch_id', $batchId)->value('state'))->toBe('done');
+    } finally {
+        foreach ($processes as $worker) {
+            $worker['process']->stop();
+        }
+        File::deleteDirectory($coordination);
+    }
+});
+
 /** @return array{string, string} */
 function seedRealFlushBatch(): array
 {
@@ -115,4 +191,29 @@ function realLakeBatchRows(DuckDb $lake, string $batchId): int
     $rows = $result[0]['rows'] ?? null;
 
     return is_int($rows) ? $rows : 0;
+}
+
+/** @return array<string, string> */
+function realFlushWorkerEnvironment(): array
+{
+    $database = config('database.connections.pgsql');
+
+    return [
+        'APP_ENV' => 'testing', 'APP_KEY' => (string) config('app.key'),
+        'DB_CONNECTION' => 'pgsql', 'DB_HOST' => (string) $database['host'],
+        'DB_PORT' => (string) $database['port'], 'DB_DATABASE' => (string) $database['database'],
+        'DB_USERNAME' => (string) $database['username'], 'DB_PASSWORD' => (string) $database['password'],
+    ];
+}
+
+/** @param list<string> $files */
+function waitForRealFlushFiles(array $files): void
+{
+    $deadline = microtime(true) + 10;
+    while (collect($files)->contains(fn (string $file): bool => ! file_exists($file))) {
+        if (microtime(true) >= $deadline) {
+            throw new RuntimeException('Timed out waiting for real flush workers.');
+        }
+        usleep(1_000);
+    }
 }

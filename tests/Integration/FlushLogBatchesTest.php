@@ -5,11 +5,11 @@ declare(strict_types=1);
 use ArtisanBuild\WakeContracts\Enums\StagingBatchStatus;
 use ArtisanBuild\WakeServer\Lake\FlushLogBatches;
 use ArtisanBuild\WakeServer\Lake\LakeWriter;
-use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Foundation\Testing\DatabaseMigrations;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
-uses(RefreshDatabase::class);
+uses(DatabaseMigrations::class);
 
 final class MemoryLakeWriter implements LakeWriter
 {
@@ -62,21 +62,22 @@ it('claims on PostgreSQL with skip locked', function (): void {
 it('does not overlap a batch locked by another PostgreSQL worker', function (): void {
     [$lockedBatch, $lockedEvent] = seedFlushBatch('worker-one');
     [, $availableEvent] = seedFlushBatch('worker-two');
-    DB::commit(); // Make fixtures visible to the independent worker connection.
     $primary = DB::connection('pgsql');
     $primary->beginTransaction();
     $primary->table('wake_staging_batches')->where('batch_id', $lockedBatch)->lockForUpdate()->first();
 
     config()->set('database.connections.pgsql_worker', config('database.connections.pgsql'));
-    DB::setDefaultConnection('pgsql_worker');
     $lake = new MemoryLakeWriter;
-    (new FlushLogBatches($lake))->run(1);
+    try {
+        DB::setDefaultConnection('pgsql_worker');
+        (new FlushLogBatches($lake))->run(1);
+    } finally {
+        DB::setDefaultConnection('pgsql');
+        $primary->rollBack();
+        DB::purge('pgsql_worker');
+    }
 
-    DB::setDefaultConnection('pgsql');
-    $primary->rollBack();
     expect($lake->events)->toHaveKey($availableEvent)->not->toHaveKey($lockedEvent);
-
-    DB::statement('TRUNCATE wake_flush_manifest, wake_error_events, wake_hourly_counts, wake_event_locators, wake_ingest_windows, wake_staging_batches, wake_connected_apps CASCADE');
 });
 
 it('converges after each deterministic crash point', function (string $crashPoint): void {

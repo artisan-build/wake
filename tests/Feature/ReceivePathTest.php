@@ -12,6 +12,7 @@ use ArtisanBuild\WakeContracts\IngestProtocol;
 use ArtisanBuild\WakeServer\Models\ConnectedApp;
 use ArtisanBuild\WakeServer\Models\StagingBatch;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
 
@@ -280,6 +281,10 @@ it('updates ingest health once without persisting authorization material', funct
     $app = wakeConnectedApp('health-app');
     $secret = 'health-secret-never-persist';
     wakeCredential($app->id, $secret);
+    Log::spy();
+
+    wakePost($this, $secret, 'wrong-health-header', wakeEnvelope('wrong-health-body'))
+        ->assertUnprocessable();
 
     wakePost($this, $secret, 'health-key', wakeEnvelope('health-key', 3, 8, '4.5.6'))
         ->assertAccepted();
@@ -291,9 +296,14 @@ it('updates ingest health once without persisting authorization material', funct
 
     expect($app->accepted_rows)->toBe(3)
         ->and($app->dropped_rows)->toBe(8)
+        ->and($app->rejected_batches)->toBe(1)
         ->and($app->last_seen_at)->not->toBeNull()
         ->and($app->last_client_version)->toBe('4.5.6')
         ->and($batch->payload['client_version'])->toBe('4.5.6')
         ->and($wakeRows->contains(fn (string $row): bool => str_contains($row, $secret)))->toBeFalse()
         ->and($wakeRows->contains(fn (string $row): bool => str_contains(strtolower($row), 'authorization')))->toBeFalse();
+
+    foreach (['emergency', 'alert', 'critical', 'error', 'warning', 'notice', 'info', 'debug', 'log'] as $method) {
+        Log::shouldNotHaveReceived($method);
+    }
 });

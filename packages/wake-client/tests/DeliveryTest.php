@@ -182,6 +182,71 @@ it('swallows transport failures and prevents recursive enqueueing', function ():
     expect(app(Transport::class)->attempts())->toBe(1);
 });
 
+it('guards normalization and filtering re-entry while flushing the outer batch', function (): void {
+    config()->set('wake.batch_size', 1);
+    $filter = new class implements PayloadFilter
+    {
+        public int $calls = 0;
+
+        public function filter(LogEvent $event): LogEvent
+        {
+            $this->calls++;
+            app('log')->channel('wake')->warning('nested-filter');
+
+            return $event;
+        }
+    };
+    app()->instance(PayloadFilter::class, $filter);
+    app()->forgetInstance(WakeHandler::class);
+    app('log')->forgetChannel('wake');
+    Http::fake(['*' => Http::response(receipt(1), 202, ['Content-Type' => 'application/json'])]);
+    $normalizerCallback = new class implements Stringable
+    {
+        public function __toString(): string
+        {
+            app('log')->channel('wake')->warning('nested-normalizer');
+
+            return 'normalized';
+        }
+    };
+
+    $handler = app(WakeHandler::class);
+    $handler->handle(new LogRecord(new DateTimeImmutable, 'app', Level::Info, 'outer', ['callback' => $normalizerCallback]));
+
+    expect($filter->calls)->toBe(1)
+        ->and($handler->state())->toBe(['buffered' => 0, 'dropped' => 0]);
+    Http::assertSentCount(1);
+    $body = Http::recorded()->first()[0]->data();
+    expect($body['rows'])->toHaveCount(1)
+        ->and($body['rows'][0]['message'])->toBe('outer')
+        ->and($body['rows'][0]['context']['callback'])->toBe('normalized');
+});
+
+it('accepts a JSON 202 content type with parameters', function (): void {
+    Http::fake(['*' => Http::response(receipt(1), 202, ['Content-Type' => 'application/json; charset=utf-8'])]);
+    $handler = app(WakeHandler::class);
+    $handler->handle(deliveryRecord('json-response'));
+
+    expect($handler->flush())->toBeTrue()
+        ->and($handler->state()['dropped'])->toBe(0);
+});
+
+it('rejects a non-JSON 202 and carries its row as debt', function (): void {
+    Http::fakeSequence()
+        ->push(json_encode(receipt(1), JSON_THROW_ON_ERROR), 202, ['Content-Type' => 'text/plain'])
+        ->push(json_encode(receipt(1), JSON_THROW_ON_ERROR), 202, ['Content-Type' => 'application/json']);
+    $handler = app(WakeHandler::class);
+    $handler->handle(deliveryRecord('wrong-media'));
+    expect($handler->flush())->toBeFalse()
+        ->and($handler->state()['dropped'])->toBe(1);
+
+    $handler->handle(deliveryRecord('valid-media'));
+    expect($handler->flush())->toBeTrue()
+        ->and($handler->state()['dropped'])->toBe(0);
+    $drops = Http::recorded()->map(fn (array $pair): int => $pair[0]->data()['dropped_count'])->all();
+    expect($drops)->toBe([0, 1]);
+});
+
 it('registers lifecycle listeners once and flushes console completion', function (): void {
     Http::fake(['*' => Http::response(receipt(1), 202)]);
     $registrar = app(LifecycleRegistrar::class);

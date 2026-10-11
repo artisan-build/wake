@@ -46,6 +46,11 @@ final class HttpTransport implements Transport
                 return false;
             }
 
+            $contentType = strtolower(trim(explode(';', $response->header('Content-Type'), 2)[0]));
+            if ($contentType !== IngestProtocol::CONTENT_TYPE) {
+                return false;
+            }
+
             $body = $response->json();
             if (! is_array($body)) {
                 return false;

@@ -23,6 +23,8 @@ final class WakeHandler extends AbstractHandler
 
     private bool $delivering = false;
 
+    private bool $handling = false;
+
     private ?bool $lastDeliverySucceeded = null;
 
     public function __construct(
@@ -40,10 +42,11 @@ final class WakeHandler extends AbstractHandler
     /** @phpstan-impure */
     public function handle(LogRecord $record): bool
     {
-        if (! $this->configured() || $this->delivering) {
+        if (! $this->configured() || $this->delivering || $this->handling) {
             return false;
         }
 
+        $this->handling = true;
         try {
             $event = $this->filter->filter($this->normalizer->normalize($record));
             if ($event === null || count($this->buffer) >= $this->maxBuffer) {
@@ -58,6 +61,8 @@ final class WakeHandler extends AbstractHandler
             }
         } catch (Throwable) {
             $this->droppedCount++;
+        } finally {
+            $this->handling = false;
         }
 
         return false;

@@ -94,8 +94,9 @@ final class DuckDb implements LakeMaintenance, LakeWriter
     {
         $before = $this->query("SELECT count(*) AS files FROM ducklake_list_files('lake', 'logs');", 300);
         $after = $this->query("CALL ducklake_merge_adjacent_files('lake', 'logs', max_compacted_files => 3); SELECT count(*) AS files FROM ducklake_list_files('lake', 'logs');", 300);
+        $lastAfter = $after === [] ? [] : $after[count($after) - 1];
 
-        return ['files_before' => $this->integer($before[0]['files'] ?? 0), 'files_after' => $this->integer($after[array_key_last($after)]['files'] ?? 0)];
+        return ['files_before' => $this->integer($before[0]['files'] ?? 0), 'files_after' => $this->integer($lastAfter['files'] ?? 0)];
     }
 
     public function deleteBefore(DateTimeInterface $cutoff): int

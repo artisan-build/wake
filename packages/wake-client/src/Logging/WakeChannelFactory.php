@@ -4,14 +4,15 @@ declare(strict_types=1);
 
 namespace ArtisanBuild\WakeClient\Logging;
 
-use Monolog\Handler\NullHandler;
 use Monolog\Logger;
 
-final class WakeChannelFactory
+final readonly class WakeChannelFactory
 {
+    public function __construct(private WakeHandler $handler) {}
+
     /** @param array<string, mixed> $config */
     public function __invoke(array $config): Logger
     {
-        return new Logger('wake', [new NullHandler]);
+        return new Logger('wake', [$this->handler]);
     }
 }

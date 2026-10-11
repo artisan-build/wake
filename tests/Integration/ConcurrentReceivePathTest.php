@@ -13,6 +13,7 @@ use ArtisanBuild\WakeServer\Models\StagingBatch;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Sleep;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
 
@@ -111,7 +112,7 @@ function runConcurrentIngest(array $submissions): array
             throw new RuntimeException('Concurrent ingest workers did not reach the barrier.');
         }
 
-        usleep(1_000);
+        Sleep::usleep(1_000);
     }
 
     file_put_contents($go, 'go');

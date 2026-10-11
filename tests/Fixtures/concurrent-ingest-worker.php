@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Illuminate\Contracts\Http\Kernel;
 use Illuminate\Http\Request;
+use Illuminate\Support\Sleep;
 
 require dirname(__DIR__, 2).'/vendor/autoload.php';
 
@@ -17,7 +18,7 @@ while (! file_exists($go)) {
         exit(2);
     }
 
-    usleep(1_000);
+    Sleep::usleep(1_000);
 }
 
 $body = base64_decode($encodedBody, true);

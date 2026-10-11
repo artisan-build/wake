@@ -145,7 +145,7 @@ final class DuckDb implements LakeMaintenance, LakeWriter
     {
         $database = config('database.connections.pgsql');
         $disk = config('filesystems.disks.s3');
-        $settings = 'SET threads=1; SET memory_limit='.$this->literal('384MB').'; SET preserve_insertion_order=false; SET autoinstall_known_extensions=false; SET autoload_known_extensions=false;';
+        $settings = "SET TimeZone='UTC'; SET threads=1; SET memory_limit=".$this->literal('384MB').'; SET preserve_insertion_order=false; SET autoinstall_known_extensions=false; SET autoload_known_extensions=false;';
         $extensions = 'SET extension_directory='.$this->literal($this->configString('wake-server.lake.extension_directory')).'; LOAD ducklake; LOAD postgres; LOAD httpfs;';
         $metadataSchema = $this->metadataSchemaOption();
 

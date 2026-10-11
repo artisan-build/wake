@@ -59,6 +59,7 @@ return new class extends Migration
             $table->string('environment', 255);
             $table->string('hostname', 255);
             $table->string('correlation_id', 255)->nullable();
+            $table->index(['occurred_at'], 'wake_error_occurred_index');
             $table->index(['app_id', 'occurred_at'], 'wake_error_app_occurred_index');
             $table->index(['event_date'], 'wake_error_day_index');
         });

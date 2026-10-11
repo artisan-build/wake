@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "f9612d6078b25abe6c3ef370d7e15d1c",
+    "content-hash": "e7f580c7109ced1737edc65248e76588",
     "packages": [
         {
             "name": "artisan-build/bfc-client",
@@ -429,7 +429,7 @@
             "dist": {
                 "type": "path",
                 "url": "packages/wake-server",
-                "reference": "2208a6c060ac1baec7cf0df007ff121adc65b75e"
+                "reference": "c73585964250d255b5f5dfea09b6a0fefe7a1127"
             },
             "require": {
                 "artisan-build/built-for-cloud": "^0.19.9",
@@ -438,7 +438,8 @@
                 "illuminate/database": "^13.0",
                 "illuminate/support": "^13.0",
                 "laravel/mcp": "^1.0",
-                "php": "^8.3"
+                "php": "^8.3",
+                "symfony/process": "^8.0"
             },
             "require-dev": {
                 "larastan/larastan": "^3.9",

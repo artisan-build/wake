@@ -6,6 +6,9 @@ namespace ArtisanBuild\WakeClient\Logging;
 
 use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Contracts\Foundation\Application;
+use Illuminate\Queue\Events\JobExceptionOccurred;
+use Illuminate\Queue\Events\JobProcessed;
+use Illuminate\Queue\Events\JobProcessing;
 
 final class LifecycleRegistrar
 {
@@ -14,6 +17,7 @@ final class LifecycleRegistrar
     public function __construct(
         private readonly Application $app,
         private readonly Dispatcher $events,
+        private readonly CorrelationState $correlations,
     ) {}
 
     public function register(): void
@@ -26,10 +30,18 @@ final class LifecycleRegistrar
         $flush = fn (): null => $this->flush();
 
         $this->app->terminating($flush);
+        $this->events->listen(JobProcessing::class, function (JobProcessing $event): void {
+            $uuid = $event->job->uuid();
+            $this->correlations->startQueueJob(is_string($uuid) ? $uuid : null);
+        });
+        $finishJob = function (): void {
+            $this->correlations->finishQueueJob();
+            $this->flush();
+        };
+        $this->events->listen(JobProcessed::class, $finishJob);
+        $this->events->listen(JobExceptionOccurred::class, $finishJob);
         foreach ([
             'Illuminate\\Console\\Events\\CommandFinished',
-            'Illuminate\\Queue\\Events\\JobProcessed',
-            'Illuminate\\Queue\\Events\\JobExceptionOccurred',
             'Laravel\\Octane\\Events\\RequestTerminated',
             'Laravel\\Octane\\Events\\TaskTerminated',
         ] as $event) {

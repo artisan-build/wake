@@ -35,6 +35,7 @@ final class WakeClientServiceProvider extends ServiceProvider
         }
 
         $this->app->singleton(PayloadFilter::class, PassThroughPayloadFilter::class);
+        $this->app->singleton(Logging\CorrelationState::class);
         $this->app->singleton(Transport::class, fn (Container $app): Transport => new HttpTransport(
             http: self::resolve($app, Factory::class),
             url: self::stringConfig($app, 'wake.url'),

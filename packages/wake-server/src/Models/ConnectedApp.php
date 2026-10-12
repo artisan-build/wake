@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Model;
 
 /**
  * @property string $id
+ * @property string|null $name
  * @property bool $enabled
  * @property int|null $batches_per_minute
  * @property int|null $events_per_minute

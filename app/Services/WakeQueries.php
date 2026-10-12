@@ -145,12 +145,17 @@ final readonly class WakeQueries
         return ['rows' => array_map(function (object $row): array {
             $data = (array) $row;
             $data['pending_batches'] = DB::table('wake_staging_batches')->where('app_id', $data['id'])->whereIn('status', ['pending', 'flushing'])->count();
-            $data['lag_seconds'] = $data['last_seen_at'] === null || $data['last_flushed_at'] === null
-                ? null
-                : max(0, CarbonImmutable::parse((string) $data['last_flushed_at'])->diffInSeconds(CarbonImmutable::parse((string) $data['last_seen_at']), false));
+            $data['lag_seconds'] = self::lagSeconds($data['last_seen_at'], $data['last_flushed_at']);
 
             return $data;
         }, $rows->all())];
+    }
+
+    public static function lagSeconds(mixed $lastSeenAt, mixed $lastFlushedAt): ?float
+    {
+        return $lastSeenAt === null || $lastFlushedAt === null
+            ? null
+            : max(0.0, CarbonImmutable::parse((string) $lastFlushedAt)->diffInSeconds(CarbonImmutable::parse((string) $lastSeenAt), false));
     }
 
     /** @param array<string, mixed> $filters

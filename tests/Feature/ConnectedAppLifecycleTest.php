@@ -119,6 +119,7 @@ it('refuses anonymous access to every app route', function (): void {
 });
 
 it('authenticates anonymous app detail and mutations before resolving app identity', function (): void {
+    config()->set('app.debug', false);
     ConnectedApp::query()->create(['id' => 'billing-api', 'name' => 'Billing API', 'enabled' => true]);
 
     $this->app->bind(PreventRequestForgery::class, static fn (Application $app): PreventRequestForgery => new class($app, $app->make(Encrypter::class)) extends PreventRequestForgery

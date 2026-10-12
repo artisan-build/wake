@@ -8,24 +8,24 @@ use Illuminate\Database\ConnectionInterface;
 use Illuminate\Support\Facades\DB;
 
 it('derives the installation reader count from the configured budget and per-reader limit', function (): void {
+    config()->set('wake-server.lake.read.memory_budget', '96MB');
+    config()->set('wake-server.lake.read.memory_limit', '96MB');
+
+    expect((new PostgresLakeReadGate)->slotCount())->toBe(1);
+
     config()->set('wake-server.lake.read.memory_budget', '384MB');
-    config()->set('wake-server.lake.read.memory_limit', '128MB');
-
-    expect((new PostgresLakeReadGate)->slotCount())->toBe(3);
-
-    config()->set('wake-server.lake.read.memory_budget', '256MB');
-    expect((new PostgresLakeReadGate)->slotCount())->toBe(2);
+    expect((new PostgresLakeReadGate)->slotCount())->toBe(4);
 });
 
 it('waits then returns a retryable busy error when every reader slot is occupied', function (): void {
-    config()->set('wake-server.lake.read.memory_budget', '384MB');
-    config()->set('wake-server.lake.read.memory_limit', '128MB');
+    config()->set('wake-server.lake.read.memory_budget', '96MB');
+    config()->set('wake-server.lake.read.memory_limit', '96MB');
     config()->set('wake-server.lake.read.wait_timeout_milliseconds', 75);
     config()->set('wake-server.lake.read.poll_interval_milliseconds', 10);
     $peers = [];
 
     try {
-        foreach (range(0, 2) as $slot) {
+        foreach (range(0, 0) as $slot) {
             $peer = independentLakeReaderConnection($slot);
             acquireLakeReaderSlot($peer, $slot);
             $peers[$slot] = $peer;
@@ -52,8 +52,8 @@ it('waits then returns a retryable busy error when every reader slot is occupied
 });
 
 it('releases its reader slot when the lake operation fails', function (): void {
-    config()->set('wake-server.lake.read.memory_budget', '128MB');
-    config()->set('wake-server.lake.read.memory_limit', '128MB');
+    config()->set('wake-server.lake.read.memory_budget', '96MB');
+    config()->set('wake-server.lake.read.memory_limit', '96MB');
 
     expect(fn () => (new PostgresLakeReadGate)->execute(static function (): never {
         throw new RuntimeException('injected reader failure');

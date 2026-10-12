@@ -30,12 +30,12 @@ it('applies independently configured reader memory and thread settings', functio
 #!/bin/sh
 set -e
 input="$(cat)"
-printf '%s' "$input" | grep -q "SET threads=3"
-printf '%s' "$input" | grep -q "memory_limit='128MB'"
+    printf '%s' "$input" | grep -q "SET threads=1"
+    printf '%s' "$input" | grep -q "memory_limit='96MB'"
 printf '%s\n' '{"marker":"__WAKE_RESULT_START__"}' '{"marker":"__WAKE_RESULT_END__"}'
 SH);
-    config()->set('wake-server.lake.read.threads', 3);
-    config()->set('wake-server.lake.read.memory_limit', '128MB');
+    config()->set('wake-server.lake.read.threads', 1);
+    config()->set('wake-server.lake.read.memory_limit', '96MB');
 
     expect((new DuckDb('wake-server.lake.read.threads', 'wake-server.lake.read.memory_limit'))->query('SELECT 1'))->toBe([]);
 });

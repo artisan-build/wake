@@ -16,6 +16,7 @@ use ArtisanBuild\WakeContracts\IngestProtocol;
 use Illuminate\Contracts\Config\Repository;
 use Illuminate\Contracts\Container\Container;
 use Illuminate\Http\Client\Factory;
+use Illuminate\Log\Logger as IlluminateLogger;
 use Illuminate\Log\LogManager;
 use Illuminate\Support\ServiceProvider;
 use LogicException;
@@ -71,6 +72,34 @@ final class WakeClientServiceProvider extends ServiceProvider
     public function boot(): void
     {
         self::resolve($this->app, Logging\LifecycleRegistrar::class)->register();
+
+        $this->app->booted(function (): void {
+            $config = self::config($this->app);
+            if ($config->get('wake.auto_attach') !== true
+                || blank($config->get('wake.url'))
+                || blank($config->get('wake.token'))) {
+                return;
+            }
+
+            $logger = self::resolve($this->app, LogManager::class)->driver();
+            if (! $logger instanceof IlluminateLogger) {
+                return;
+            }
+
+            $monolog = $logger->getLogger();
+            if (! $monolog instanceof Logger) {
+                return;
+            }
+
+            foreach ($monolog->getHandlers() as $handler) {
+                if ($handler instanceof WakeHandler) {
+                    return;
+                }
+            }
+
+            $monolog->pushHandler(self::resolve($this->app, WakeHandler::class));
+        });
+
         if ($this->app->runningInConsole()) {
             $this->commands([WakeDoctorCommand::class]);
         }

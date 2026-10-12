@@ -13,8 +13,9 @@ Add the connection values to the client app:
 ```dotenv
 WAKE_URL=https://wake.example.com
 WAKE_TOKEN=the-token-shown-by-wake
-LOG_STACK=single,wake
 ```
+
+With both values set, the client attaches Wake to the app's active default log channel. Existing log destinations keep receiving the same records. Set `WAKE_AUTO_ATTACH=false` to opt out and use the explicit `wake` channel instead.
 
 Keep the token out of source control. Rotate it from the app detail page if it is exposed, then replace the old value in the client app.
 

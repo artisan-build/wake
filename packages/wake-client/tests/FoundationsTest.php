@@ -11,6 +11,7 @@ use Monolog\LogRecord;
 
 it('registers a cached-config-safe wake channel with safe defaults', function (): void {
     expect(config('logging.channels.wake'))->toBe(['driver' => 'wake'])
+        ->and(config('wake.auto_attach'))->toBeTrue()
         ->and(config('wake.batch_size'))->toBe(100)
         ->and(config('wake.max_buffer'))->toBe(500)
         ->and(config('wake.connect_timeout'))->toBe(0.5)

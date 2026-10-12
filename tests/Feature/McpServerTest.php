@@ -4,13 +4,22 @@ declare(strict_types=1);
 
 use App\Authorization\WakeCredentialAbility;
 use App\Mcp\WakeMcpServer;
+use ArtisanBuild\BuiltForCloud\Console\Assertion;
+use ArtisanBuild\BuiltForCloud\Console\ConsoleRole;
+use ArtisanBuild\BuiltForCloud\Console\DelegatedActor;
+use ArtisanBuild\BuiltForCloud\Console\RequestAssertion;
 use ArtisanBuild\BuiltForCloud\CredentialPurpose;
+use ArtisanBuild\BuiltForCloud\Mcp\RequestEffectCeiling;
 use ArtisanBuild\BuiltForCloud\SubjectType;
 use ArtisanBuild\BuiltForCloud\Testing\CredentialAbilityAssertions;
 use ArtisanBuild\BuiltForCloud\Testing\McpDelegatedTools;
 use ArtisanBuild\BuiltForCloud\Testing\McpProductAdmission;
 use ArtisanBuild\BuiltForCloud\Testing\WithCredentials;
+use Carbon\CarbonImmutable;
+use Illuminate\Http\Request;
+use Illuminate\Support\Str;
 use Laravel\Mcp\Facades\Mcp;
+use Laravel\Mcp\Server\Transport\FakeTransporter;
 
 uses(WithCredentials::class);
 
@@ -127,6 +136,27 @@ it('requires the exact Wake ability and rejects ingest credentials on both doors
             'jsonrpc' => '2.0', 'id' => 3, 'method' => 'tools/list',
         ])->assertUnauthorized();
     }
+});
+
+it('grants all ten tools to a verified delegated person', function (): void {
+    $actor = DelegatedActor::query()->create([
+        'identity_hash' => DelegatedActor::identityHash('wake-test', 'member'),
+        'issuer' => 'wake-test', 'subject' => 'member', 'last_handoff_display_name' => 'Wake Member',
+        'last_handoff_role' => ConsoleRole::Member,
+    ]);
+    $request = Request::create('/mcp/delegated');
+    RequestAssertion::publish($request, $actor, Assertion::fromVerifiedClaims(
+        issuer: 'wake-test', subject: 'member', displayName: 'Wake Member', role: ConsoleRole::Member,
+        onBehalfOf: 'Wake tests', audience: 'wake-test', issuedAt: CarbonImmutable::now()->subSecond(),
+        expiresAt: CarbonImmutable::now()->addMinute(), keyId: 'wake-key', id: (string) Str::uuid(),
+    ));
+    app()->instance('request', $request);
+    RequestEffectCeiling::publish($request, 'destructive');
+
+    $server = app()->make(WakeMcpServer::class, ['transport' => new FakeTransporter]);
+    $server->start();
+
+    expect($server->createContext()->tools())->toHaveCount(10);
 });
 
 it('passes Built for Cloud product admission conformance', function (): void {

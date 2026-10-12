@@ -47,10 +47,21 @@ it('loads a tiny corpus into the real lake and matching query plane exactly once
             'hour' => gmdate('Y-m-d H:00:00+00', strtotime((string) $row->hour)), 'count' => (int) $row->count,
         ])->all();
     $lakeGroups = array_map(fn (array $row): array => [...$row, 'count' => (int) $row['count']], $lakeGroups);
+    $lakeEventIds = array_column($lake->query("SELECT event_id FROM lake.logs WHERE starts_with(app_id, 'verify-tiny-agreement-app-') ORDER BY event_id;"), 'event_id');
+    $postgresEventIds = DB::table('wake_event_locators')->where('app_id', 'like', 'verify-tiny-agreement-app-%')->orderBy('event_id')->pluck('event_id')->all();
+    $apps = DB::table('wake_connected_apps')->where('id', 'like', 'verify-tiny-agreement-app-%')->orderBy('id')->get();
 
     expect($first)->toBe(['lake_rows' => 12, 'locators' => 12, 'errors' => 1, 'hourly_events' => 12])
         ->and($second)->toBe($first)
         ->and($lakeGroups)->toBe($postgresGroups)
+        ->and($lakeEventIds)->toBe($postgresEventIds)
+        ->and($lakeEventIds)->each->toMatch('/^[0-7][0-9A-HJKMNP-TV-Z]{25}$/')
+        ->and(DB::table('wake_verification_chunks')->where('run_key', $plan->runKey)->pluck('batch_id')->all())->each->toMatch('/^[0-7][0-9A-HJKMNP-TV-Z]{25}$/')
+        ->and($apps->pluck('accepted_rows')->map(fn (mixed $count): int => (int) $count)->all())->toBe([6, 6])
+        ->and($apps->pluck('flushed_rows')->map(fn (mixed $count): int => (int) $count)->all())->toBe([6, 6])
+        ->and($apps->pluck('last_client_version')->all())->toBe([$plan->clientVersion(), $plan->clientVersion()])
+        ->and($apps->pluck('last_seen_at')->all())->toBe($apps->pluck('last_flushed_at')->all())
+        ->and(array_map(fn (mixed $at): string => gmdate('Y-m-d\TH:i:s.000000\Z', strtotime((string) $at)), $apps->pluck('last_seen_at')->all()))->toBe([$plan->occurredAt(10), $plan->occurredAt(11)])
         ->and(DB::table('wake_verification_runs')->where('run_key', $plan->runKey)->value('completed_rows'))->toBe(12)
         ->and(DB::table('wake_verification_chunks')->where('run_key', $plan->runKey)->where('state', 'done')->count())->toBe(3)
         ->and(gmdate('Y-m-d\TH:i:s.000000\Z', strtotime((string) DB::table('wake_event_locators')->where('event_id', $plan->eventId(0))->value('occurred_at'))))->toBe($plan->occurredAt(0))
@@ -68,7 +79,12 @@ it('reconciles an interruption after the real lake commit without double countin
 
     expect(fn () => (new ScaleCorpusLoader($lake, resolve(LakeWriterLock::class), $fault))->run($plan))
         ->toThrow(RuntimeException::class, 'Injected after_lake_commit');
-    expect(verificationLakeRows($lake, $plan))->toBe(4)
+    $lake->commitBatch($plan->batchId(0), [[
+        'event_id' => '01ARZ3NDEKTSV4RRFFQ69G5FAV', 'app_id' => 'outside-day-decoy', 'occurred_at' => '2026-09-11T23:59:59.000000Z',
+        'level' => 'info', 'channel' => 'stack', 'message' => 'outside day', 'context' => [], 'extra' => [], 'exception' => null,
+        'environment' => 'testing', 'hostname' => 'localhost', 'correlation_id' => null,
+    ]]);
+    expect(verificationLakeRows($lake, $plan))->toBe(5)
         ->and(DB::table('wake_event_locators')->count())->toBe(0)
         ->and(DB::table('wake_hourly_counts')->count())->toBe(0)
         ->and(DB::table('wake_verification_chunks')->where('run_key', $plan->runKey)->value('state'))->toBe('planned');
@@ -76,9 +92,11 @@ it('reconciles an interruption after the real lake commit without double countin
     $result = (new ScaleCorpusLoader($lake, resolve(LakeWriterLock::class)))->run($plan);
 
     expect($result)->toBe(['lake_rows' => 4, 'locators' => 4, 'errors' => 1, 'hourly_events' => 4])
-        ->and(verificationLakeRows($lake, $plan))->toBe(4)
+        ->and(verificationLakeRows($lake, $plan))->toBe(5)
         ->and(DB::table('wake_event_locators')->count())->toBe(4)
         ->and((int) DB::table('wake_hourly_counts')->sum('count'))->toBe(4)
+        ->and((int) DB::table('wake_connected_apps')->value('accepted_rows'))->toBe(4)
+        ->and((int) DB::table('wake_connected_apps')->value('flushed_rows'))->toBe(4)
         ->and(DB::table('wake_verification_chunks')->where('run_key', $plan->runKey)->value('state'))->toBe('done');
 });
 

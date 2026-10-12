@@ -9,6 +9,8 @@ use InvalidArgumentException;
 
 final readonly class ScaleCorpusPlan
 {
+    private const string ULID_ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+
     public const int DEFAULT_ROWS = 50_000_000;
 
     public const int DEFAULT_APPS = 40;
@@ -18,6 +20,10 @@ final readonly class ScaleCorpusPlan
     public const int DEFAULT_CHUNK = 100_000;
 
     public const string START_UTC = '2026-09-12 00:00:00+00';
+
+    public string $eventIdPrefix;
+
+    public string $batchIdPrefix;
 
     public function __construct(
         public string $runKey,
@@ -37,6 +43,14 @@ final readonly class ScaleCorpusPlan
         if ($chunk > DuckDb::MAX_INSERT_ROWS) {
             throw new InvalidArgumentException('chunk cannot exceed 100000 rows.');
         }
+        foreach (['rows' => [$rows, self::DEFAULT_ROWS], 'apps' => [$apps, self::DEFAULT_APPS], 'days' => [$days, self::DEFAULT_DAYS]] as $name => [$value, $maximum]) {
+            if ($value > $maximum) {
+                throw new InvalidArgumentException("{$name} cannot exceed {$maximum}.");
+            }
+        }
+
+        $this->eventIdPrefix = self::ulidPrefix($runKey, 'event');
+        $this->batchIdPrefix = self::ulidPrefix($runKey, 'batch');
     }
 
     /** @param array{run: mixed, rows: mixed, apps: mixed, days: mixed, chunk: mixed} $options */
@@ -58,12 +72,12 @@ final readonly class ScaleCorpusPlan
 
     public function batchId(int $offset): string
     {
-        return substr(md5("{$this->runKey}:chunk:{$offset}"), 0, 26);
+        return $this->batchIdPrefix.self::ulidOrdinal($offset);
     }
 
     public function eventId(int $ordinal): string
     {
-        return substr(md5("{$this->runKey}:{$ordinal}"), 0, 26);
+        return $this->eventIdPrefix.self::ulidOrdinal($ordinal);
     }
 
     public function occurredAt(int $ordinal): string
@@ -71,6 +85,49 @@ final readonly class ScaleCorpusPlan
         $seconds = intdiv($ordinal * $this->days * 86_400, $this->rows);
 
         return gmdate('Y-m-d\TH:i:s.000000\Z', strtotime(self::START_UTC) + $seconds);
+    }
+
+    /** @return list<string> */
+    public function eventDays(int $offset, int $count): array
+    {
+        $first = strtotime(substr($this->occurredAt($offset), 0, 10).' 00:00:00 UTC');
+        $last = strtotime(substr($this->occurredAt($offset + $count - 1), 0, 10).' 00:00:00 UTC');
+        $days = [];
+        for ($day = $first; $day <= $last; $day += 86_400) {
+            $days[] = gmdate('Y-m-d', $day);
+        }
+
+        return $days;
+    }
+
+    public function clientVersion(): string
+    {
+        return 'wake-verification/'.$this->runKey;
+    }
+
+    private static function ulidPrefix(string $runKey, string $purpose): string
+    {
+        $hash = hash('sha256', "{$purpose}:{$runKey}");
+        $prefix = self::ULID_ALPHABET[hexdec($hash[0]) % 8];
+        for ($index = 1; $index < 19; $index++) {
+            $prefix .= self::ULID_ALPHABET[hexdec($hash[$index])];
+        }
+
+        return $prefix;
+    }
+
+    private static function ulidOrdinal(int $ordinal): string
+    {
+        if ($ordinal < 0 || $ordinal >= 34_359_738_368) {
+            throw new InvalidArgumentException('Identifier ordinal is outside the supported range.');
+        }
+        $suffix = '';
+        for ($position = 0; $position < 7; $position++) {
+            $suffix = self::ULID_ALPHABET[$ordinal % 32].$suffix;
+            $ordinal = intdiv($ordinal, 32);
+        }
+
+        return $suffix;
     }
 
     private static function integer(mixed $value, string $name): int

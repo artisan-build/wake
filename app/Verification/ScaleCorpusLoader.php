@@ -81,7 +81,7 @@ final class ScaleCorpusLoader
             return;
         }
 
-        $lakeRows = $this->lakeChunkRows($batchId);
+        $lakeRows = $this->lakeChunkRows($plan, $batchId, $offset, $count);
         if ($lakeRows === 0) {
             $this->insertLakeChunk($plan, $batchId, $offset, $count);
             $lakeRows = $count;
@@ -111,6 +111,7 @@ final class ScaleCorpusLoader
             DB::statement($generated.' INSERT INTO wake_event_locators (event_id, app_id, event_date, occurred_at) SELECT event_id, app_id, occurred_at::date, occurred_at FROM generated ON CONFLICT (event_id) DO NOTHING', $bindings);
             DB::statement($generated." INSERT INTO wake_error_events (event_id, app_id, event_date, occurred_at, level, channel, message, context, extra, exception, environment, hostname, correlation_id) SELECT event_id, app_id, occurred_at::date, occurred_at, level, 'stack', message, context, extra, exception, environment, hostname, correlation_id FROM generated WHERE level IN ('error', 'critical', 'alert', 'emergency') ON CONFLICT (event_id) DO NOTHING", $bindings);
             DB::statement($generated.' INSERT INTO wake_hourly_counts (app_id, environment, level, hour, count) SELECT app_id, environment, level, date_trunc(\'hour\', occurred_at), count(*) FROM generated GROUP BY app_id, environment, level, date_trunc(\'hour\', occurred_at) ON CONFLICT (app_id, environment, level, hour) DO UPDATE SET count = wake_hourly_counts.count + excluded.count', $bindings);
+            DB::statement($generated.' UPDATE wake_connected_apps AS apps SET accepted_rows = apps.accepted_rows + generated_apps.event_count, flushed_rows = apps.flushed_rows + generated_apps.event_count, last_seen_at = generated_apps.last_occurred_at, last_flushed_at = generated_apps.last_occurred_at, last_client_version = ?::text, updated_at = now() FROM (SELECT app_id, count(*) AS event_count, max(occurred_at) AS last_occurred_at FROM generated GROUP BY app_id) AS generated_apps WHERE apps.id = generated_apps.app_id', [...$bindings, $plan->clientVersion()]);
 
             DB::table('wake_verification_chunks')->where(['run_key' => $plan->runKey, 'chunk_number' => $number])
                 ->update(['state' => 'done', 'done_at' => now(), 'updated_at' => now()]);
@@ -129,10 +130,11 @@ final class ScaleCorpusLoader
         $start = $this->lake->literal(ScaleCorpusPlan::START_UTC);
         $end = $offset + $count;
         $seconds = $plan->days * 86_400;
+        $eventId = $this->duckUlid($this->lake->literal($plan->eventIdPrefix));
         $sql = <<<SQL
             BEGIN TRANSACTION;
             INSERT INTO lake.logs (batch_id, event_id, app_id, event_date, occurred_at, level, channel, message, context, extra, exception, environment, hostname, correlation_id, ingested_at)
-            SELECT {$batch}, substr(md5({$run} || ':' || ordinal::VARCHAR), 1, 26), printf('verify-%s-app-%02d', {$run}, (ordinal % {$plan->apps}) + 1),
+            SELECT {$batch}, {$eventId}, printf('verify-%s-app-%02d', {$run}, (ordinal % {$plan->apps}) + 1),
                 occurred_at::DATE, occurred_at, level, 'stack',
                 CASE WHEN ordinal = 0 THEN 'WAKE_VERIFICATION_KNOWN_EVENT ' || {$run} WHEN level = 'error' THEN 'Checkout failed [E500] request-' || ordinal::VARCHAR ELSE 'Synthetic request completed request-' || ordinal::VARCHAR END,
                 json_object('request_id', 'request-' || ordinal::VARCHAR, 'duration_ms', 10 + (ordinal % 1200), 'route', CASE WHEN ordinal % 3 = 0 THEN '/checkout' ELSE '/dashboard' END),
@@ -153,9 +155,10 @@ final class ScaleCorpusLoader
     private function postgresGenerated(ScaleCorpusPlan $plan, int $offset, int $count): array
     {
         $end = $offset + $count - 1;
-        $sql = <<<'SQL'
+        $eventId = $this->postgresUlid('?::text');
+        $sql = <<<SQL
             WITH generated AS (
-                SELECT ordinal, substr(md5(?::text || ':' || ordinal::text), 1, 26) AS event_id,
+                SELECT ordinal, {$eventId} AS event_id,
                     format('verify-%s-app-%s', ?::text, lpad(((ordinal % ?::bigint) + 1)::text, 2, '0')) AS app_id,
                     timestamp with time zone '2026-09-12 00:00:00+00' + floor((ordinal::numeric * ?::bigint) / ?::bigint) * interval '1 second' AS occurred_at,
                     CASE WHEN ordinal % 100 = 0 THEN 'error' WHEN ordinal % 31 = 0 THEN 'warning' WHEN ordinal % 7 = 0 THEN 'debug' ELSE 'info' END AS level,
@@ -170,12 +173,13 @@ final class ScaleCorpusLoader
             )
             SQL;
 
-        return [$sql, [$plan->runKey, $plan->runKey, $plan->apps, $plan->days * 86_400, $plan->rows, $plan->runKey, $plan->runKey, $plan->runKey, $plan->runKey, $offset, $end]];
+        return [$sql, [$plan->eventIdPrefix, $plan->runKey, $plan->apps, $plan->days * 86_400, $plan->rows, $plan->runKey, $plan->runKey, $plan->runKey, $plan->runKey, $offset, $end]];
     }
 
-    private function lakeChunkRows(string $batchId): int
+    private function lakeChunkRows(ScaleCorpusPlan $plan, string $batchId, int $offset, int $count): int
     {
-        $rows = $this->lake->query('SELECT count(*) AS rows FROM lake.logs WHERE batch_id = '.$this->lake->literal($batchId).';');
+        $days = implode(', ', array_map(fn (string $day): string => 'CAST('.$this->lake->literal($day).' AS DATE)', $plan->eventDays($offset, $count)));
+        $rows = $this->lake->query('SELECT count(*) AS rows FROM lake.logs WHERE event_date IN ('.$days.') AND batch_id = '.$this->lake->literal($batchId).';');
 
         return (int) ($rows[0]['rows'] ?? 0);
     }
@@ -197,5 +201,25 @@ final class ScaleCorpusLoader
     private function appId(ScaleCorpusPlan $plan, int $app): string
     {
         return sprintf('verify-%s-app-%02d', $plan->runKey, $app);
+    }
+
+    private function duckUlid(string $prefix): string
+    {
+        $parts = [];
+        foreach ([1_073_741_824, 33_554_432, 1_048_576, 32_768, 1_024, 32, 1] as $divisor) {
+            $parts[] = "substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', ((floor(ordinal / {$divisor})::BIGINT % 32) + 1), 1)";
+        }
+
+        return $prefix.' || '.implode(' || ', $parts);
+    }
+
+    private function postgresUlid(string $prefix): string
+    {
+        $parts = [];
+        foreach ([1_073_741_824, 33_554_432, 1_048_576, 32_768, 1_024, 32, 1] as $divisor) {
+            $parts[] = "substr('0123456789ABCDEFGHJKMNPQRSTVWXYZ', (((ordinal / {$divisor}) % 32) + 1)::integer, 1)";
+        }
+
+        return $prefix.' || '.implode(' || ', $parts);
     }
 }

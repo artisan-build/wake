@@ -40,5 +40,5 @@ it('rejects invalid command options before resolving the loader', function (stri
         ->doesntExpectOutputToContain('loader was resolved')
         ->assertExitCode(2);
 })->with([
-    ['rows', '0'], ['apps', '-1'], ['days', 'no'], ['chunk', '100001'], ['run', 'NOT SAFE'],
+    ['rows', '0'], ['rows', '50000001'], ['apps', '-1'], ['apps', '41'], ['days', 'no'], ['days', '31'], ['chunk', '100001'], ['run', 'NOT SAFE'],
 ]);

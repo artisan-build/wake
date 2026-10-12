@@ -92,7 +92,7 @@ final readonly class WakeQueries
         [$from, $to] = $this->window($filters, 365);
         $query = DB::table('wake_error_events')->whereBetween('occurred_at', [$from, $to]);
         $this->postgresFilters($query, $app, $filters);
-        $rows = $query->orderByDesc('occurred_at')->orderByDesc('event_id')->limit($this->limit($filters))->get();
+        $rows = $query->latest('occurred_at')->orderByDesc('event_id')->limit($this->limit($filters))->get();
 
         return ['rows' => $this->rows($rows->all())];
     }

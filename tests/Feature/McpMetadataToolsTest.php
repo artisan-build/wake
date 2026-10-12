@@ -13,7 +13,7 @@ use ArtisanBuild\BuiltForCloud\Testing\WithCredentials;
 use ArtisanBuild\WakeServer\Lake\LakeReader;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\Request as HttpRequest;
-use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
 use Laravel\Mcp\Request as McpRequest;
@@ -63,7 +63,7 @@ beforeEach(function (): void {
 });
 
 it('returns derived app aggregate and health metadata without an untrusted marker or lake query', function (): void {
-    $start = Carbon::parse('2026-10-01T00:00:00Z');
+    $start = Date::parse('2026-10-01T00:00:00Z');
     $counts = [];
     for ($index = 0; $index < 501; $index++) {
         $counts[] = [

@@ -11,7 +11,7 @@ use RuntimeException;
 use Symfony\Component\Process\Process;
 use ZipArchive;
 
-final class DuckDbInstaller
+final readonly class DuckDbInstaller
 {
     private const string VERSION = '1.5.6';
 
@@ -39,20 +39,14 @@ final class DuckDbInstaller
         ],
     ];
 
-    private readonly string $root;
+    private string $root;
 
-    private readonly string $osFamily;
+    private string $osFamily;
 
-    private readonly string $machine;
+    private string $machine;
 
     /** @var array<string, array{asset: string, checksum: string}> */
-    private readonly array $assets;
-
-    /** @var null|Closure(string, string): void */
-    private readonly ?Closure $download;
-
-    /** @var null|Closure(list<string>): void */
-    private readonly ?Closure $run;
+    private array $assets;
 
     /**
      * @param  null|Closure(string, string): void  $download
@@ -63,16 +57,14 @@ final class DuckDbInstaller
         ?string $root = null,
         ?string $osFamily = null,
         ?string $machine = null,
-        ?Closure $download = null,
-        ?Closure $run = null,
+        private ?Closure $download = null,
+        private ?Closure $run = null,
         ?array $assets = null,
     ) {
         $this->root = $root ?? base_path();
         $this->osFamily = $osFamily ?? PHP_OS_FAMILY;
         $this->machine = $machine ?? strtolower(php_uname('m'));
         $this->assets = $assets ?? self::ASSETS;
-        $this->download = $download;
-        $this->run = $run;
     }
 
     public function install(): bool

@@ -11,6 +11,7 @@ use App\Services\WakeQueries;
 use ArtisanBuild\BuiltForCloud\CredentialPurpose;
 use ArtisanBuild\BuiltForCloud\SubjectType;
 use ArtisanBuild\BuiltForCloud\Testing\WithCredentials;
+use ArtisanBuild\WakeServer\Lake\LakeBusyException;
 use ArtisanBuild\WakeServer\Lake\LakeReader;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\Request as HttpRequest;
@@ -35,6 +36,19 @@ final class ContentToolLakeReader implements LakeReader
         $this->sql[] = $sql;
 
         return array_shift($this->results) ?? [];
+    }
+
+    public function literal(?string $value): string
+    {
+        return $value === null ? 'NULL' : "'".str_replace("'", "''", $value)."'";
+    }
+}
+
+final class BusyContentToolLakeReader implements LakeReader
+{
+    public function query(string $sql, int $timeout = 20): array
+    {
+        throw new LakeBusyException;
     }
 
     public function literal(?string $value): string
@@ -125,6 +139,16 @@ it('marks empty content responses and rejects implicit scope and unknown argumen
     ])->assertOk()->assertJsonPath('result.isError', true);
 
     expect($this->lake->sql)->toHaveCount(1);
+});
+
+it('returns a clean retryable tool error when the lake reader gate times out', function (): void {
+    app()->instance(LakeReader::class, new BusyContentToolLakeReader);
+
+    callWakeContentTool($this->credential->bearerHeader(), 'search_logs', [
+        'all_apps' => true, 'from' => '2026-10-01T00:00:00Z', 'to' => '2026-10-02T00:00:00Z', 'text' => 'failed',
+    ])->assertOk()
+        ->assertJsonPath('result.isError', true)
+        ->assertJsonPath('result.content.0.text', 'The log lake is busy. Retry this request shortly.');
 });
 
 it('publishes required windows and hard schema caps for the four content tools', function (): void {

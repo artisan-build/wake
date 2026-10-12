@@ -127,6 +127,28 @@ final class IngestService
         ConnectedApp::query()->whereKey($appId)->increment('rejected_batches');
     }
 
+    public function recordUnmappedRejection(string $subjectRef): void
+    {
+        DB::transaction(static function () use ($subjectRef): void {
+            $now = now();
+
+            DB::table('wake_unmapped_ingest_rejections')->insertOrIgnore([
+                'subject_ref' => $subjectRef,
+                'rejected_batches' => 0,
+                'last_seen_at' => $now,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]);
+
+            DB::table('wake_unmapped_ingest_rejections')
+                ->where('subject_ref', $subjectRef)
+                ->increment('rejected_batches', 1, [
+                    'last_seen_at' => $now,
+                    'updated_at' => $now,
+                ]);
+        }, 3);
+    }
+
     private function existingBatch(string $appId, string $idempotencyKey): ?StagingBatch
     {
         /** @var StagingBatch|null */

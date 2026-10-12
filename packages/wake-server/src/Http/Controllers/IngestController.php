@@ -42,13 +42,22 @@ final class IngestController
             return $this->error(403, ErrorCode::Forbidden, 'Credential is not allowed to ingest.');
         }
 
-        $appId = $credential->subject_ref;
         /** @var ConnectedApp|null $app */
-        $app = ConnectedApp::query()->find($appId);
+        $app = ConnectedApp::query()->where('subject_ref', $credential->subject_ref)->first();
 
-        if ($app === null || ! $app->enabled) {
+        if ($app === null) {
+            $this->ingest->recordUnmappedRejection($credential->subject_ref);
+
             return $this->error(403, ErrorCode::Forbidden, 'Credential is not allowed to ingest.');
         }
+
+        if (! $app->enabled) {
+            $this->ingest->recordRejection($app->id);
+
+            return $this->error(403, ErrorCode::Forbidden, 'Credential is not allowed to ingest.');
+        }
+
+        $appId = $app->id;
 
         if (! $this->usage->recordUsage($credential)) {
             return $this->error(401, ErrorCode::Unauthorized, 'A valid bearer credential is required.');

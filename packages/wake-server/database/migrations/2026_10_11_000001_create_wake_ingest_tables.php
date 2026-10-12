@@ -13,6 +13,7 @@ return new class extends Migration
     {
         Schema::create('wake_connected_apps', function (Blueprint $table): void {
             $table->string('id')->primary();
+            $table->string('subject_ref')->nullable()->unique();
             $table->string('name', 100)->nullable()->unique();
             $table->boolean('enabled')->default(true);
             $table->unsignedInteger('batches_per_minute')->nullable();
@@ -25,6 +26,13 @@ return new class extends Migration
             $table->timestampTz('last_seen_at', 6)->nullable();
             $table->timestampTz('last_flushed_at', 6)->nullable();
             $table->string('last_client_version', 64)->nullable();
+            $table->timestampsTz(6);
+        });
+
+        Schema::create('wake_unmapped_ingest_rejections', function (Blueprint $table): void {
+            $table->string('subject_ref')->primary();
+            $table->unsignedBigInteger('rejected_batches')->default(0);
+            $table->timestampTz('last_seen_at', 6);
             $table->timestampsTz(6);
         });
 
@@ -73,6 +81,7 @@ return new class extends Migration
     {
         Schema::dropIfExists('wake_ingest_windows');
         Schema::dropIfExists('wake_staging_batches');
+        Schema::dropIfExists('wake_unmapped_ingest_rejections');
         Schema::dropIfExists('wake_connected_apps');
     }
 };

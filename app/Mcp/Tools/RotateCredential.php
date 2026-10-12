@@ -7,6 +7,7 @@ namespace App\Mcp\Tools;
 use App\Services\IngestCredentialTarget;
 use ArtisanBuild\BuiltForCloud\Actions\RotateCredential as RotateCredentialAction;
 use ArtisanBuild\BuiltForCloud\AuditActor;
+use ArtisanBuild\BuiltForCloud\Credential;
 use ArtisanBuild\BuiltForCloud\CredentialManagementScope;
 use ArtisanBuild\BuiltForCloud\DeliveryShape;
 use ArtisanBuild\BuiltForCloud\Mcp\AdvertisesToolClassification;
@@ -18,7 +19,6 @@ use ArtisanBuild\BuiltForCloud\Mcp\ToolEffect;
 use ArtisanBuild\BuiltForCloud\Mcp\TwoPhase;
 use ArtisanBuild\BuiltForCloud\RotateOptions;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
-use Illuminate\Support\Facades\DB;
 use Laravel\Mcp\Request;
 use Laravel\Mcp\Response;
 use Laravel\Mcp\Server\Tools\Annotations\IsDestructive;
@@ -43,7 +43,7 @@ final class RotateCredential extends WakeTool
     {
         $this->authorize();
         [$app, $credentialId] = $this->arguments($request);
-        if (! $this->target($app, $credentialId)) {
+        if ($this->target($app, $credentialId) === null) {
             return $this->missingTarget();
         }
 
@@ -54,7 +54,8 @@ final class RotateCredential extends WakeTool
     {
         $principal = $this->authorize();
         [$app, $credentialId] = $this->arguments($request);
-        if (! $this->target($app, $credentialId)) {
+        $target = $this->target($app, $credentialId);
+        if ($target === null) {
             return $this->missingTarget();
         }
         $identifier = $principal->identifier();
@@ -62,7 +63,7 @@ final class RotateCredential extends WakeTool
             return Response::error('The acting MCP principal cannot be attributed.');
         }
         $result = resolve(RotateCredentialAction::class)(
-            $credentialId,
+            $target->id,
             new RotateOptions,
             AuditActor::operatorIntegration((string) $identifier),
             CredentialManagementScope::memberInstallation(),
@@ -92,13 +93,9 @@ final class RotateCredential extends WakeTool
         return [(string) $validated['app'], (string) $validated['credential_id']];
     }
 
-    private function target(string $app, string $credentialId): bool
+    private function target(string $app, string $credentialId): ?Credential
     {
-        if (! DB::table('wake_connected_apps')->where('id', $app)->exists()) {
-            return false;
-        }
-
-        return resolve(IngestCredentialTarget::class)->findForRotate($app, $credentialId) !== null;
+        return resolve(IngestCredentialTarget::class)->findForRotate($app, $credentialId);
     }
 
     private function missingTarget(): Response

@@ -27,19 +27,20 @@ final class ConnectedAppsController extends Controller
             : view('apps.index', ['apps' => $apps]);
     }
 
-    public function show(Request $request, ConnectedApp $app, ConnectedAppCredentials $credentials, ConnectedAppHealth $health): JsonResponse|View
+    public function show(Request $request, string $app, ConnectedAppCredentials $credentials, ConnectedAppHealth $health): JsonResponse|View
     {
-        $credential = $credentials->current($app->id);
+        $connectedApp = ConnectedApp::query()->findOrFail($app);
+        $credential = $credentials->current($connectedApp->id);
 
         return $request->expectsJson()
             ? response()->json([
-                'app' => $app->only(['id', 'name', 'enabled']),
+                'app' => $connectedApp->only(['id', 'name', 'enabled']),
                 'credential_id' => $credential?->id,
             ])
             : view('apps.show', [
-                'app' => $app,
+                'app' => $connectedApp,
                 'credential' => $credential,
-                'health' => $health->for($app),
+                'health' => $health->for($connectedApp),
                 'wakeUrl' => url('/'),
             ]);
     }
@@ -72,12 +73,13 @@ final class ConnectedAppsController extends Controller
         ], 201)->header('Cache-Control', 'no-store');
     }
 
-    public function rotate(Request $request, ConnectedApp $app, ConnectedAppCredentials $credentials): Response
+    public function rotate(Request $request, string $app, ConnectedAppCredentials $credentials): Response
     {
-        $credential = $credentials->current($app->id);
+        $connectedApp = ConnectedApp::query()->findOrFail($app);
+        $credential = $credentials->current($connectedApp->id);
         abort_if($credential === null, 404);
 
-        $rotated = $credentials->rotate($app->id, $credential->id, $this->actor($request));
+        $rotated = $credentials->rotate($connectedApp->id, $credential->id, $this->actor($request));
         abort_if($rotated === null, 404);
 
         $secret = $rotated->mint->secret?->reveal();
@@ -90,7 +92,7 @@ final class ConnectedAppsController extends Controller
         }
 
         return response()->view('apps.secret', [
-            'app' => $app,
+            'app' => $connectedApp,
             'credentialId' => $rotated->mint->summary->id,
             'secret' => $secret,
             'wakeUrl' => url('/'),
@@ -98,18 +100,19 @@ final class ConnectedAppsController extends Controller
         ], 201)->header('Cache-Control', 'no-store');
     }
 
-    public function revoke(Request $request, ConnectedApp $app, ConnectedAppCredentials $credentials): Response
+    public function revoke(Request $request, string $app, ConnectedAppCredentials $credentials): Response
     {
-        $credential = $credentials->current($app->id);
+        $connectedApp = ConnectedApp::query()->findOrFail($app);
+        $credential = $credentials->current($connectedApp->id);
         abort_if($credential === null, 404);
 
-        $outcome = $credentials->revoke($app->id, $credential->id, $this->actor($request));
+        $outcome = $credentials->revoke($connectedApp->id, $credential->id, $this->actor($request));
 
         if ($outcome === RevokeOutcome::NotFound) {
             abort(404);
         }
 
-        return $request->expectsJson() ? response()->noContent() : to_route('apps.show', $app);
+        return $request->expectsJson() ? response()->noContent() : to_route('apps.show', $connectedApp);
     }
 
     private function actor(Request $request): AuditActor

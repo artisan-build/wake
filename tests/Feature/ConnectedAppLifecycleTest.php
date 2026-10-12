@@ -14,9 +14,13 @@ use ArtisanBuild\BuiltForCloud\SubjectType;
 use ArtisanBuild\BuiltForCloud\User;
 use ArtisanBuild\BuiltForCloud\UserRole;
 use ArtisanBuild\WakeServer\Models\ConnectedApp;
+use Illuminate\Contracts\Encryption\Encrypter;
+use Illuminate\Foundation\Application;
+use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
 
 beforeEach(function (): void {
     config()->set('auth.guards.bfc', ['driver' => 'bfc', 'provider' => 'users']);
@@ -111,6 +115,32 @@ it('refuses anonymous access to every app route', function (): void {
         ['DELETE', '/apps/billing-api/credential'],
     ] as [$method, $uri]) {
         $this->json($method, $uri)->assertUnauthorized();
+    }
+});
+
+it('authenticates anonymous app detail and mutations before resolving app identity', function (): void {
+    ConnectedApp::query()->create(['id' => 'billing-api', 'name' => 'Billing API', 'enabled' => true]);
+
+    $this->app->bind(PreventRequestForgery::class, static fn (Application $app): PreventRequestForgery => new class($app, $app->make(Encrypter::class)) extends PreventRequestForgery
+    {
+        protected function runningUnitTests(): bool
+        {
+            return false;
+        }
+    });
+
+    $csrfToken = Str::random(40);
+    $this->withSession(['_token' => $csrfToken])->withHeader('X-CSRF-TOKEN', $csrfToken);
+
+    foreach ([
+        ['GET', '/apps/billing-api', '/apps/missing-app'],
+        ['POST', '/apps/billing-api/credential/rotate', '/apps/missing-app/credential/rotate'],
+        ['DELETE', '/apps/billing-api/credential', '/apps/missing-app/credential'],
+    ] as [$method, $existingUri, $missingUri]) {
+        $existing = $this->json($method, $existingUri)->assertUnauthorized();
+        $missing = $this->json($method, $missingUri)->assertUnauthorized();
+
+        expect($missing->getContent())->toBe($existing->getContent());
     }
 });
 

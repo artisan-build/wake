@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "ed5e0be7eb550d199a8d98677e649267",
+    "content-hash": "d3e0165ee9e92dde9ed84fe066bcd548",
     "packages": [
         {
             "name": "artisan-build/bfc-client",
@@ -12434,6 +12434,7 @@
     "prefer-stable": true,
     "prefer-lowest": false,
     "platform": {
+        "ext-zip": "*",
         "php": "^8.3"
     },
     "platform-dev": {},

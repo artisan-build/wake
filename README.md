@@ -9,10 +9,9 @@ applications without sending the log corpus to a third-party service.
 
 ## What It Does
 
-This repository currently contains the Built for Cloud application and installable skeletons for the
-Wake contracts, Laravel client, and server packages. Log ingestion, DuckLake storage, the
-administration surface, and MCP tools are planned in the approved v1 build but are not implemented
-yet.
+This repository contains the Built for Cloud application and the Wake contracts, Laravel client, and
+server packages. Wake ingests logs into DuckLake, provides an administration surface, and exposes MCP
+tools for agents to search and inspect the stored logs.
 
 ## Built For Cloud
 
@@ -29,16 +28,17 @@ Before the first deploy, replace every placeholder in the `manifest` block of
 | `name` | The product's display name as Scalpels lists it. |
 | `slug` | The product's lower-kebab-case Scalpels catalog slug. |
 | `description` | One sentence saying what the product does, as on its Scalpels product page. |
-| `icon` | `https://scalpels.app/img/products/transparent/{slug}.png` |
+| `icon` | `https://scalpels.app/img/products/transparent/{slug}.svg` |
 | `product_url` | `https://scalpels.app/products/{slug}` |
 
 The `slug` must exactly match the product's Scalpels catalog slug; its artwork loads from
-`https://scalpels.app/img/products/transparent/{slug}.png`.
+`https://scalpels.app/img/products/transparent/{slug}.svg`.
 
 ## Local Development
 
 ```bash
 composer setup
+composer install:duckdb
 composer dev
 ```
 
@@ -60,11 +60,8 @@ from the root with `composer packages:check`.
 Artisan Build agents handling Laravel Cloud work must follow
 `brain/skills/laravel-cloud-deploy/SKILL.md`. Start with read-only discovery. Credentials come from
 the authenticated Laravel Cloud CLI; discover application and environment identifiers rather than
-guessing or committing them. Keep `.cloud/config.json` uncommitted, and verify the application and
-its attached resources after every deployment.
-
-Wake has no provisioned Laravel Cloud environment yet. The v1 build will commit the Cloud application
-configuration after the environment and its resources are created.
+guessing or committing them. Wake keeps `.cloud/config.json` committed as its Cloud CLI project
+configuration. Verify the application and its attached resources after every deployment.
 
 ## Repository
 

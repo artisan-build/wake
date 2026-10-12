@@ -12,6 +12,7 @@
     ],
     "license": "MIT",
     "require": {
+        "ext-zip": "*",
         "php": "^8.3",
         "artisan-build/built-for-cloud": "^0.19.9",
         "artisan-build/hone-client": "^1.6",
@@ -76,7 +77,7 @@
             "Composer\\Config::disableProcessTimeout",
             "@php artisan serve --host=localhost"
         ],
-        "install:duckdb": "bash scripts/install-duckdb.sh",
+        "install:duckdb": "@php artisan wake:install-duckdb",
         "lint": [
             "pint --parallel"
         ],

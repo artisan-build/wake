@@ -9,7 +9,7 @@ use RuntimeException;
 use SensitiveParameter;
 use Symfony\Component\Process\Process;
 
-final class DuckDb implements LakeMaintenance, LakeWriter
+final class DuckDb implements LakeAppDeletion, LakeMaintenance, LakeReader, LakeWriter
 {
     public const int MAX_INSERT_ROWS = 100_000;
 
@@ -103,6 +103,21 @@ final class DuckDb implements LakeMaintenance, LakeWriter
     {
         $date = $this->literal($cutoff->format('Y-m-d'));
         $result = $this->query("SELECT count(*) AS deleted_rows FROM lake.logs WHERE event_date < CAST({$date} AS DATE); DELETE FROM lake.logs WHERE event_date < CAST({$date} AS DATE);", 300);
+
+        return $this->integer($result[0]['deleted_rows'] ?? 0);
+    }
+
+    public function countAppRows(string $appId): int
+    {
+        $result = $this->query('SELECT count(*) AS rows FROM lake.logs WHERE app_id = '.$this->literal($appId).';', 120);
+
+        return $this->integer($result[0]['rows'] ?? 0);
+    }
+
+    public function deleteAppRows(string $appId): int
+    {
+        $app = $this->literal($appId);
+        $result = $this->query("BEGIN TRANSACTION; SELECT count(*) AS deleted_rows FROM lake.logs WHERE app_id = {$app}; DELETE FROM lake.logs WHERE app_id = {$app}; COMMIT;", 300);
 
         return $this->integer($result[0]['deleted_rows'] ?? 0);
     }

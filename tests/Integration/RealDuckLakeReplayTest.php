@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Services\DeleteAppLogs;
 use App\Services\WakeQueries;
+use ArtisanBuild\WakeServer\Jobs\RewriteLakeDay;
 use ArtisanBuild\WakeServer\Lake\DuckDb;
 use ArtisanBuild\WakeServer\Lake\FlushLogBatches;
 use ArtisanBuild\WakeServer\Lake\LakeWriterLock;
@@ -58,6 +59,52 @@ it('bootstraps real DuckLake on PostgreSQL and replays one batch without duplica
     $result = $lake->query('SELECT count(*) AS rows FROM lake.logs WHERE batch_id = '.$lake->literal($batchId).';');
 
     expect($result[0]['rows'] ?? null)->toBe(1);
+});
+
+it('rewrites one named fragmented day through the queued job and real writer lock', function (): void {
+    expect(is_executable(base_path('bin/duckdb')))->toBeTrue('Run scripts/install-duckdb.sh before the root test lane.');
+    $lake = resolve(DuckDb::class);
+    $days = ['2026-10-01', '2026-10-02', '2026-10-03', '2026-10-04'];
+    $lake->bootstrap();
+
+    for ($batch = 0; $batch < 2; $batch++) {
+        $rows = [];
+        foreach ($days as $day) {
+            $rows[] = [
+                'event_id' => (string) Str::ulid(), 'app_id' => $batch === 0 ? 'zeta' : 'alpha',
+                'occurred_at' => "{$day}T0".(8 + $batch).':00:00.000000Z', 'level' => 'info',
+                'channel' => 'app', 'message' => "day rewrite {$day} batch {$batch}",
+                'context' => ['day' => $day], 'extra' => [], 'exception' => null,
+                'environment' => 'testing', 'hostname' => 'localhost', 'correlation_id' => null,
+            ];
+        }
+        $lake->commitBatch((string) Str::ulid(), $rows);
+    }
+
+    $rowsBefore = $lake->query('SELECT event_id, app_id, CAST(event_date AS VARCHAR) AS event_date, CAST(occurred_at AS VARCHAR) AS occurred_at FROM lake.logs ORDER BY event_id;');
+    $daysBefore = realLakeFilesAndRowsByDay($lake);
+    $snapshotBefore = $lake->query("SELECT max(snapshot_id) AS snapshot_id FROM ducklake_snapshots('lake');");
+    $candidates = $lake->fragmentedDays(3);
+
+    (new RewriteLakeDay($candidates[0]))->handle($lake, resolve(LakeWriterLock::class));
+
+    $rowsAfter = $lake->query('SELECT event_id, app_id, CAST(event_date AS VARCHAR) AS event_date, CAST(occurred_at AS VARCHAR) AS occurred_at FROM lake.logs ORDER BY event_id;');
+    $daysAfter = realLakeFilesAndRowsByDay($lake);
+    $snapshotAfter = $lake->query("SELECT min(snapshot_id) AS snapshot_id FROM ducklake_snapshots('lake');");
+
+    expect($daysBefore)->toBe([
+        ['event_date' => '2026-10-01', 'files' => 2, 'rows' => 2],
+        ['event_date' => '2026-10-02', 'files' => 2, 'rows' => 2],
+        ['event_date' => '2026-10-03', 'files' => 2, 'rows' => 2],
+        ['event_date' => '2026-10-04', 'files' => 2, 'rows' => 2],
+    ])->and($candidates)->toBe(['2026-10-01', '2026-10-02', '2026-10-03'])
+        ->and($daysAfter)->toBe([
+            ['event_date' => '2026-10-01', 'files' => 1, 'rows' => 2],
+            ['event_date' => '2026-10-02', 'files' => 2, 'rows' => 2],
+            ['event_date' => '2026-10-03', 'files' => 2, 'rows' => 2],
+            ['event_date' => '2026-10-04', 'files' => 2, 'rows' => 2],
+        ])->and($rowsAfter)->toBe($rowsBefore)
+        ->and((int) ($snapshotAfter[0]['snapshot_id'] ?? 0))->toBeGreaterThan((int) ($snapshotBefore[0]['snapshot_id'] ?? 0));
 });
 
 it('keeps the UTC day stable for storage replay detection and retention under a non UTC host timezone', function (): void {
@@ -332,6 +379,19 @@ function realLakeBatchRows(DuckDb $lake, string $batchId): int
     $rows = $result[0]['rows'] ?? null;
 
     return is_int($rows) ? $rows : 0;
+}
+
+/** @return list<array{event_date: string, files: int, rows: int}> */
+function realLakeFilesAndRowsByDay(DuckDb $lake): array
+{
+    return array_map(
+        fn (array $row): array => [
+            'event_date' => (string) $row['event_date'],
+            'files' => (int) $row['files'],
+            'rows' => (int) $row['rows'],
+        ],
+        $lake->query('SELECT CAST(event_date AS VARCHAR) AS event_date, count(DISTINCT filename) AS files, count(*) AS rows FROM lake.logs GROUP BY event_date ORDER BY event_date;'),
+    );
 }
 
 /** @return array<string, string> */

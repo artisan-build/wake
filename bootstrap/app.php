@@ -2,6 +2,7 @@
 
 use App\Console\Commands\ConfigureBuiltForCloud;
 use App\Console\Commands\InstallFluxPro;
+use App\Console\Commands\LoadVerificationCorpus;
 use App\Console\Commands\OptimizeTailwind;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -16,6 +17,7 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withCommands([
         ConfigureBuiltForCloud::class,
         InstallFluxPro::class,
+        LoadVerificationCorpus::class,
         OptimizeTailwind::class,
     ])
     ->withMiddleware(function (Middleware $middleware): void {

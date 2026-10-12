@@ -10,8 +10,9 @@ repositories.
 - default mode: A-autonomous
 - merge policy: merge on green CI; no human PR code review (Ed, 2026-10-11)
 - merge method: `gh pr merge --squash`
-- security-material override: PR2 (ingest) and PR5 (MCP) require an independent quality reviewer and
-  acceptance judge before merge.
+- independent review: every PR that changes authentication, credentials, secrets, authorization,
+  signing, or durable storage/relay of outbound content the system did not author requires an
+  independent quality reviewer and acceptance judge before merge.
 
 ## Hard gate
 

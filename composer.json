@@ -18,6 +18,7 @@
         "artisan-build/wake-client": "^0.1",
         "artisan-build/wake-contracts": "^0.1",
         "artisan-build/wake-server": "^0.1",
+        "aws/aws-sdk-php": "^3.400",
         "laravel/chisel": "^0.1.0",
         "laravel/framework": "^13.19",
         "laravel/mcp": "^1.0",

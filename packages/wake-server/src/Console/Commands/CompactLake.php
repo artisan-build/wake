@@ -4,30 +4,29 @@ declare(strict_types=1);
 
 namespace ArtisanBuild\WakeServer\Console\Commands;
 
+use ArtisanBuild\WakeServer\Jobs\RewriteLakeDay;
 use ArtisanBuild\WakeServer\Lake\LakeMaintenance;
-use ArtisanBuild\WakeServer\Lake\LakeWriterLock;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Queue;
 
 final class CompactLake extends Command
 {
     protected $signature = 'wake:lake-compact';
 
-    protected $description = 'Compact adjacent Wake DuckLake files.';
+    protected $description = 'Dispatch bounded Wake DuckLake day rewrites.';
 
-    public function handle(LakeMaintenance $lake, LakeWriterLock $lock): int
+    public function handle(LakeMaintenance $lake): int
     {
-        $result = null;
-        if (! $lock->execute(function () use ($lake, &$result): void {
-            $result = $lake->compact();
-        })) {
-            $this->components->info('DuckLake writer is busy; compaction skipped.');
+        $days = $lake->fragmentedDays(3);
+        if ($days === []) {
+            $this->components->info('No fragmented DuckLake days to dispatch.');
 
             return self::SUCCESS;
         }
-        if (! is_array($result)) {
-            return self::FAILURE;
+        foreach ($days as $day) {
+            Queue::connection('cloud')->pushOn('wake-lake', new RewriteLakeDay($day));
         }
-        $this->components->info("Compacted DuckLake files ({$result['files_before']} -> {$result['files_after']}).");
+        $this->components->info('Dispatched '.count($days).' DuckLake day rewrite job(s).');
 
         return self::SUCCESS;
     }

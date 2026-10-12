@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services;
 
 use ArtisanBuild\BuiltForCloud\Credential;
+use ArtisanBuild\BuiltForCloud\CredentialKind;
 use ArtisanBuild\BuiltForCloud\CredentialPurpose;
 use ArtisanBuild\BuiltForCloud\CredentialStatus;
 use ArtisanBuild\BuiltForCloud\SubjectType;
@@ -20,6 +21,7 @@ final class IngestCredentialTarget
 
         return Credential::query()
             ->whereKey($credentialId)
+            ->where('kind', CredentialKind::Bearer)
             ->where('purpose', CredentialPurpose::Consumption)
             ->where('subject_type', SubjectType::Installation)
             ->where('subject_ref', $appId)

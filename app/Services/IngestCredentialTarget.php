@@ -13,13 +13,23 @@ use Illuminate\Support\Str;
 
 final class IngestCredentialTarget
 {
-    public function find(string $appId, string $credentialId): ?Credential
+    public function findForRevoke(string $appId, string $credentialId): ?Credential
+    {
+        return $this->find($appId, $credentialId, false);
+    }
+
+    public function findForRotate(string $appId, string $credentialId): ?Credential
+    {
+        return $this->find($appId, $credentialId, true);
+    }
+
+    private function find(string $appId, string $credentialId, bool $unrotated): ?Credential
     {
         if (! Str::isUuid($credentialId)) {
             return null;
         }
 
-        return Credential::query()
+        $query = Credential::query()
             ->whereKey($credentialId)
             ->where('kind', CredentialKind::Bearer)
             ->where('purpose', CredentialPurpose::Consumption)
@@ -28,10 +38,10 @@ final class IngestCredentialTarget
             ->whereNull('user_id')
             ->where('status', CredentialStatus::Active)
             ->whereNull('revoked_at')
-            ->whereNull('rotated_at')
             ->where(static function ($query): void {
                 $query->whereNull('expires_at')->orWhere('expires_at', '>', now());
-            })
-            ->first();
+            });
+
+        return $unrotated ? $query->whereNull('rotated_at')->first() : $query->first();
     }
 }

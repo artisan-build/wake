@@ -90,7 +90,7 @@ final class RevokeCredential extends WakeTool
             return false;
         }
 
-        return resolve(IngestCredentialTarget::class)->find($app, $credentialId) !== null;
+        return resolve(IngestCredentialTarget::class)->findForRevoke($app, $credentialId) !== null;
     }
 
     private function missingTarget(): Response

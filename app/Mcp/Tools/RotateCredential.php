@@ -98,7 +98,7 @@ final class RotateCredential extends WakeTool
             return false;
         }
 
-        return resolve(IngestCredentialTarget::class)->find($app, $credentialId) !== null;
+        return resolve(IngestCredentialTarget::class)->findForRotate($app, $credentialId) !== null;
     }
 
     private function missingTarget(): Response

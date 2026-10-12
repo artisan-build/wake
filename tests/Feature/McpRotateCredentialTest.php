@@ -88,8 +88,8 @@ it('previews secret-free then rotates with preserved binding and response-only b
     $old = $source->credential->refresh();
     expect($old->rotated_at)->not->toBeNull()
         ->and($old->expires_at?->equalTo(now()->addHour()))->toBeTrue()
-        ->and(resolve(IngestCredentialTarget::class)->find('alpha', $old->id))->toBeNull()
-        ->and(resolve(IngestCredentialTarget::class)->find('alpha', $replacement->id)?->is($replacement))->toBeTrue();
+        ->and(resolve(IngestCredentialTarget::class)->findForRotate('alpha', $old->id))->toBeNull()
+        ->and(resolve(IngestCredentialTarget::class)->findForRotate('alpha', $replacement->id)?->is($replacement))->toBeTrue();
     $events = CredentialAuditEvent::query()->whereIn('credential_id', [$old->id, $replacement->id])->get();
     expect($events->pluck('event')->all())->toContain(LifecycleEventType::Issued, LifecycleEventType::Rotated)
         ->and($events->where('actor_type', AuditActorType::OperatorIntegration)->pluck('actor_ref')->unique()->all())->toBe([(string) $this->actor->credential->getAuthIdentifier()])

@@ -3,18 +3,27 @@
 declare(strict_types=1);
 
 use App\Authorization\WakeCredentialAbility;
+use App\Mcp\Tools\RevokeCredential as RevokeCredentialTool;
 use App\Services\IngestCredentialTarget;
+use ArtisanBuild\BuiltForCloud\Actions\RevokeCredential as RevokeCredentialAction;
+use ArtisanBuild\BuiltForCloud\Actions\RotateCredential as RotateCredentialAction;
 use ArtisanBuild\BuiltForCloud\AuditActorType;
+use ArtisanBuild\BuiltForCloud\Auth\CredentialResolver;
 use ArtisanBuild\BuiltForCloud\CredentialAuditEvent;
+use ArtisanBuild\BuiltForCloud\CredentialKind;
 use ArtisanBuild\BuiltForCloud\CredentialPurpose;
 use ArtisanBuild\BuiltForCloud\LifecycleEventType;
 use ArtisanBuild\BuiltForCloud\Mcp\TwoPhaseConfirmationRefused;
+use ArtisanBuild\BuiltForCloud\RotateOptions;
 use ArtisanBuild\BuiltForCloud\SubjectType;
 use ArtisanBuild\BuiltForCloud\Testing\MintedTestCredential;
 use ArtisanBuild\BuiltForCloud\Testing\WithCredentials;
 use ArtisanBuild\BuiltForCloud\User;
+use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Http\Request as HttpRequest;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
+use Laravel\Mcp\Request as McpRequest;
 
 uses(WithCredentials::class);
 
@@ -61,14 +70,14 @@ it('selects only a current unbound installation ingest credential for the exact 
     $accountOwned = mintIngestTarget(['user_id' => (string) $user->getKey()]);
     $selector = resolve(IngestCredentialTarget::class);
 
-    expect($selector->find('alpha', $valid->credential->id)?->is($valid->credential))->toBeTrue()
-        ->and($selector->find('alpha', $wrongPurpose->credential->id))->toBeNull()
-        ->and($selector->find('alpha', $otherApp->credential->id))->toBeNull()
-        ->and($selector->find('alpha', $nonInstallation->credential->id))->toBeNull()
-        ->and($selector->find('alpha', $revoked->credential->id))->toBeNull()
-        ->and($selector->find('alpha', $expired->credential->id))->toBeNull()
-        ->and($selector->find('alpha', $accountOwned->credential->id))->toBeNull()
-        ->and($selector->find('alpha', 'missing'))->toBeNull();
+    expect($selector->findForRevoke('alpha', $valid->credential->id)?->is($valid->credential))->toBeTrue()
+        ->and($selector->findForRevoke('alpha', $wrongPurpose->credential->id))->toBeNull()
+        ->and($selector->findForRevoke('alpha', $otherApp->credential->id))->toBeNull()
+        ->and($selector->findForRevoke('alpha', $nonInstallation->credential->id))->toBeNull()
+        ->and($selector->findForRevoke('alpha', $revoked->credential->id))->toBeNull()
+        ->and($selector->findForRevoke('alpha', $expired->credential->id))->toBeNull()
+        ->and($selector->findForRevoke('alpha', $accountOwned->credential->id))->toBeNull()
+        ->and($selector->findForRevoke('alpha', 'missing'))->toBeNull();
 });
 
 it('previews without mutation then revokes through the unified action with attributed secret-free audit', function (): void {
@@ -126,4 +135,36 @@ it('preserves effect ceiling argument subject and replay protections', function 
     callRevokeTool('/mcp/destructive', $this->actor->bearerHeader(), [...$arguments, 'confirm' => $confirmation])->assertOk();
     callRevokeTool('/mcp/destructive', $this->actor->bearerHeader(), [...$arguments, 'confirm' => $confirmation])
         ->assertStatus(400)->assertJsonPath('error.message', TwoPhaseConfirmationRefused::SPENT);
+});
+
+it('revokes a superseded bearer that still authenticates during rotation grace', function (): void {
+    $source = mintIngestTarget();
+    $rotation = resolve(RotateCredentialAction::class)(
+        $source->credential->id,
+        new RotateOptions,
+    );
+    expect($rotation)->not->toBeNull()
+        ->and($source->credential->refresh()->rotated_at)->not->toBeNull()
+        ->and(resolve(IngestCredentialTarget::class)->findForRotate('alpha', $source->credential->id))->toBeNull()
+        ->and(resolve(IngestCredentialTarget::class)->findForRevoke('alpha', $source->credential->id)?->is($source->credential))->toBeTrue()
+        ->and(resolve(CredentialResolver::class)->resolve(CredentialKind::Bearer, $source->plaintext())?->is($source->credential))->toBeTrue();
+
+    $arguments = ['app' => 'alpha', 'credential_id' => $source->credential->id];
+    $preview = callRevokeTool('/mcp/destructive', $this->actor->bearerHeader(), $arguments)->assertOk();
+    $confirmation = $preview->json('result._meta.two_phase.confirmation');
+    callRevokeTool('/mcp/destructive', $this->actor->bearerHeader(), [...$arguments, 'confirm' => $confirmation])
+        ->assertOk()->assertDontSee($source->plaintext());
+
+    expect($source->credential->refresh()->revoked_at)->not->toBeNull()
+        ->and(resolve(CredentialResolver::class)->resolve(CredentialKind::Bearer, $source->plaintext()))->toBeNull()
+        ->and(CredentialAuditEvent::query()->where('credential_id', $source->credential->id)->where('event', LifecycleEventType::Revoked)->count())->toBe(1);
+});
+
+it('authorizes revoke before validation or selector and action resolution', function (): void {
+    app()->instance('request', HttpRequest::create('/mcp', 'POST'));
+    app()->bind(IngestCredentialTarget::class, static fn (): never => throw new LogicException('Selector resolved before authorization.'));
+    app()->bind(RevokeCredentialAction::class, static fn (): never => throw new LogicException('Action resolved before authorization.'));
+
+    expect(fn () => (new RevokeCredentialTool)->handle(new McpRequest(['unknown' => 'value'])))
+        ->toThrow(AuthorizationException::class);
 });

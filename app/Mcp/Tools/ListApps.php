@@ -38,6 +38,6 @@ final class ListApps extends WakeTool
             'all_apps' => ['nullable', 'boolean'],
         ], ['app', 'all_apps']);
 
-        return Response::json(resolve(WakeQueries::class)->listApps($validated));
+        return $this->untrusted(resolve(WakeQueries::class)->listApps($validated));
     }
 }

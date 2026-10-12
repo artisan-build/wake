@@ -44,6 +44,6 @@ final class AggregateLogs extends WakeTool
             'group_by.*' => ['string', 'in:hour,app,environment,level'],
         ], ['app', 'all_apps', 'environment', 'level', 'from', 'to', 'group_by']);
 
-        return Response::json(resolve(WakeQueries::class)->aggregate($validated));
+        return $this->untrusted(resolve(WakeQueries::class)->aggregate($validated));
     }
 }

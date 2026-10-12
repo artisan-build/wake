@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Services;
 
-use App\Authorization\WakeCredentialAbility;
 use ArtisanBuild\BuiltForCloud\Actions\MintCredential;
 use ArtisanBuild\BuiltForCloud\Actions\RevokeCredential;
 use ArtisanBuild\BuiltForCloud\Actions\RotateCredential;
@@ -48,7 +47,6 @@ final readonly class ConnectedAppCredentials
                     kind: CredentialKind::Bearer,
                     purpose: CredentialPurpose::Consumption,
                     name: $name.' ingest',
-                    abilities: [WakeCredentialAbility::Read->value],
                 ),
                 $actor,
             );

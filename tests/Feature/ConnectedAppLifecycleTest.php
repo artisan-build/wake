@@ -11,15 +11,12 @@ use ArtisanBuild\BuiltForCloud\CredentialPurpose;
 use ArtisanBuild\BuiltForCloud\InstallationAuthority;
 use ArtisanBuild\BuiltForCloud\RevokeOutcome;
 use ArtisanBuild\BuiltForCloud\SubjectType;
-use ArtisanBuild\BuiltForCloud\Testing\WithCredentials;
 use ArtisanBuild\BuiltForCloud\User;
 use ArtisanBuild\BuiltForCloud\UserRole;
 use ArtisanBuild\WakeServer\Models\ConnectedApp;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Hash;
-
-uses(WithCredentials::class);
 
 beforeEach(function (): void {
     config()->set('auth.guards.bfc', ['driver' => 'bfc', 'provider' => 'users']);
@@ -63,10 +60,29 @@ it('creates rotates and revokes the exact app credential with response-only secr
         ->and($first->subject_type)->toBe(SubjectType::Installation)
         ->and($first->subject_ref)->toBe('billing-api')
         ->and($first->user_id)->toBeNull()
+        ->and($first->abilities)->toBeNull()
         ->and(hash_equals((string) $first->secret_hash, hash('sha256', $firstSecret)))->toBeTrue()
         ->and(json_encode($first->getAttributes(), JSON_THROW_ON_ERROR))->not->toContain($firstSecret);
 
     $this->getJson('/apps/billing-api')->assertOk()->assertDontSee($firstSecret);
+
+    $this->post('/bfc/logout')->assertRedirect('/bfc/login');
+    foreach (['/mcp', '/mcp/destructive'] as $path) {
+        $this->withHeader('Authorization', 'Bearer '.$firstSecret)->postJson($path, [
+            'jsonrpc' => '2.0', 'id' => 'ingest-refusal', 'method' => 'tools/list',
+        ])->assertUnauthorized();
+    }
+    foreach ([
+        ['GET', '/apps'],
+        ['POST', '/apps'],
+        ['GET', '/apps/billing-api'],
+        ['POST', '/apps/billing-api/credential/rotate'],
+        ['DELETE', '/apps/billing-api/credential'],
+    ] as [$method, $uri]) {
+        $this->withHeader('Authorization', 'Bearer '.$firstSecret)->json($method, $uri)->assertUnauthorized();
+    }
+    $this->flushHeaders();
+    loginWakeMember();
 
     $rotated = $this->postJson('/apps/billing-api/credential/rotate')
         ->assertCreated()
@@ -84,13 +100,8 @@ it('creates rotates and revokes the exact app credential with response-only secr
     expect($replacement->refresh()->revoked_at)->not->toBeNull();
 });
 
-it('refuses anonymous and ingest credential access to every app route', function (): void {
+it('refuses anonymous access to every app route', function (): void {
     ConnectedApp::query()->create(['id' => 'billing-api', 'name' => 'Billing API', 'enabled' => true]);
-    $ingest = $this->mintCredential([
-        'purpose' => CredentialPurpose::Consumption,
-        'subject_type' => SubjectType::Installation,
-        'subject_ref' => 'billing-api',
-    ]);
 
     foreach ([
         ['GET', '/apps'],
@@ -99,9 +110,7 @@ it('refuses anonymous and ingest credential access to every app route', function
         ['POST', '/apps/billing-api/credential/rotate'],
         ['DELETE', '/apps/billing-api/credential'],
     ] as [$method, $uri]) {
-        $this->flushHeaders();
         $this->json($method, $uri)->assertUnauthorized();
-        $this->withHeader('Authorization', $ingest->bearerHeader())->json($method, $uri)->assertUnauthorized();
     }
 });
 

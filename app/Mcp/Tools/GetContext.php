@@ -40,7 +40,7 @@ final class GetContext extends WakeTool
             'after' => ['nullable', 'integer', 'min:0', 'max:50'],
         ], ['app', 'event_id', 'before', 'after']);
 
-        return $this->untrusted(resolve(WakeQueries::class)->context(
+        return $this->untrustedLake(fn (): array => resolve(WakeQueries::class)->context(
             (string) $validated['app'],
             (string) $validated['event_id'],
             (int) ($validated['before'] ?? 5),

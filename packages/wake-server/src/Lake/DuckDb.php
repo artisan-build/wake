@@ -15,6 +15,11 @@ final class DuckDb implements LakeAppDeletion, LakeMaintenance, LakeReader, Lake
 {
     public const int MAX_INSERT_ROWS = 100_000;
 
+    public function __construct(
+        private readonly string $threadsConfig = 'wake-server.lake.threads',
+        private readonly string $memoryLimitConfig = 'wake-server.lake.memory_limit',
+    ) {}
+
     /** @return list<array<string, mixed>> */
     public function query(#[SensitiveParameter] string $sql, int $timeout = 20): array
     {
@@ -185,7 +190,9 @@ final class DuckDb implements LakeAppDeletion, LakeMaintenance, LakeReader, Lake
     {
         $database = config('database.connections.pgsql');
         $disk = config('filesystems.disks.s3');
-        $settings = "SET TimeZone='UTC'; SET threads=1; SET memory_limit=".$this->literal('384MB').'; SET preserve_insertion_order=false; SET autoinstall_known_extensions=false; SET autoload_known_extensions=false;';
+        $threads = $this->configInteger($this->threadsConfig, 1, 64);
+        $memoryLimit = $this->configMemory($this->memoryLimitConfig);
+        $settings = "SET TimeZone='UTC'; SET threads={$threads}; SET memory_limit=".$this->literal($memoryLimit).'; SET preserve_insertion_order=false; SET autoinstall_known_extensions=false; SET autoload_known_extensions=false;';
         $extensions = 'SET extension_directory='.$this->literal($this->configString('wake-server.lake.extension_directory')).'; LOAD ducklake; LOAD postgres; LOAD httpfs;';
         $metadataSchema = $this->metadataSchemaOption();
 
@@ -377,6 +384,26 @@ final class DuckDb implements LakeAppDeletion, LakeMaintenance, LakeReader, Lake
     private function configString(string $key): string
     {
         return $this->scalarString(config($key), $key);
+    }
+
+    private function configInteger(string $key, int $minimum, int $maximum): int
+    {
+        $value = config($key);
+        if (! is_int($value) || $value < $minimum || $value > $maximum) {
+            throw new RuntimeException("{$key} must be an integer between {$minimum} and {$maximum}.");
+        }
+
+        return $value;
+    }
+
+    private function configMemory(string $key): string
+    {
+        $value = config($key);
+        if (! is_string($value) || preg_match('/^[1-9]\d*(?:KB|MB|GB)$/D', $value) !== 1) {
+            throw new RuntimeException("{$key} must use KB, MB, or GB.");
+        }
+
+        return $value;
     }
 
     private function scalarString(mixed $value, string $name): string

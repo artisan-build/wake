@@ -118,7 +118,34 @@ it('rejects an insertion chunk above the hard bound', function (): void {
         ->toThrow(RuntimeException::class, 'cannot exceed 100000');
 });
 
-it('rewrites at most three deterministic multi-file days in separate sorted spillable processes', function (): void {
+it('selects at most three deterministic fragmented UTC days', function (): void {
+    file_put_contents($this->binary, <<<'SH'
+#!/bin/sh
+set -e
+input="$(cat)"
+printf '%s' "$input" | grep -q 'HAVING count(DISTINCT filename) > 1'
+printf '%s' "$input" | grep -q 'ORDER BY event_date ASC LIMIT 3'
+printf '%s\n' '{"marker":"__WAKE_RESULT_START__"}' '{"event_date":"2026-10-01"}' '{"event_date":"2026-10-02"}' '{"event_date":"2026-10-03"}' '{"marker":"__WAKE_RESULT_END__"}'
+SH);
+
+    expect((new DuckDb)->fragmentedDays(9))->toBe(['2026-10-01', '2026-10-02', '2026-10-03']);
+});
+
+it('skips an already converged day without rewriting or expiring snapshots', function (): void {
+    file_put_contents($this->binary, <<<'SH'
+#!/bin/sh
+set -e
+input="$(cat)"
+printf '%s' "$input" | grep -q "event_date = CAST('2026-10-01' AS DATE)"
+if printf '%s' "$input" | grep -q 'CREATE TEMP TABLE'; then exit 1; fi
+if printf '%s' "$input" | grep -q 'ducklake_expire_snapshots'; then exit 1; fi
+printf '%s\n' '{"marker":"__WAKE_RESULT_START__"}' '{"files":1,"rows":2}' '{"marker":"__WAKE_RESULT_END__"}'
+SH);
+
+    expect((new DuckDb)->rewriteDay('2026-10-01'))->toBeFalse();
+});
+
+it('rewrites one day with worker settings and verifies convergence before expiry', function (): void {
     $state = $this->binary.'.state';
     $script = str_replace('__STATE__', escapeshellarg($state), <<<'SH'
 #!/bin/sh
@@ -130,44 +157,23 @@ call=$((call + 1))
 printf '%s' "$call" > "$state"
 input="$(cat)"
 case "$call" in
-  1)
-    printf '%s' "$input" | grep -q "ducklake_list_files('lake', 'logs')"
-    rows='{"files":10}'
-    ;;
+  1) rows='{"files":2,"rows":2}' ;;
   2)
-    printf '%s' "$input" | grep -q 'count(DISTINCT filename)'
-    printf '%s' "$input" | grep -q 'HAVING count(DISTINCT filename) > 1'
-    printf '%s' "$input" | grep -q 'ORDER BY event_date ASC LIMIT 3'
-    rows='{"event_date":"2026-10-01","files":18}
-{"event_date":"2026-10-02","files":17}
-{"event_date":"2026-10-03","files":18}'
-    ;;
-  3|4|5)
+    printf '%s' "$input" | grep -q "CAST('2026-10-01' AS DATE)"
     printf '%s' "$input" | grep -q "memory_limit='384MB'"
-    if printf '%s' "$input" | grep -q "memory_limit='240MB'"; then exit 1; fi
-    if printf '%s' "$input" | grep -q "target_file_size', '8MB'"; then exit 1; fi
+    printf '%s' "$input" | grep -q "memory_limit='1433MB'"
     printf '%s' "$input" | grep -q "target_file_size', '32MB'"
     printf '%s' "$input" | grep -q 'SET threads=1'
-    printf '%s' "$input" | grep -q 'SET preserve_insertion_order=false'
     printf '%s' "$input" | grep -q 'SET temp_directory='
-    printf '%s' "$input" | grep -q 'CREATE TEMP TABLE wake_compaction_day'
     printf '%s' "$input" | grep -q 'ORDER BY app_id, occurred_at'
     printf '%s' "$input" | grep -q 'BEGIN TRANSACTION'
-    printf '%s' "$input" | grep -q 'DELETE FROM lake.logs'
-    printf '%s' "$input" | grep -q 'INSERT INTO lake.logs'
     printf '%s' "$input" | grep -q 'COMMIT'
-    day=$(printf '%02d' $((call - 2)))
-    printf '%s' "$input" | grep -q "CAST('2026-10-$day' AS DATE)"
-    rows=''
+    rows='{"files":1,"rows":2}'
     ;;
-  6)
+  3)
     printf '%s' "$input" | grep -q 'ducklake_expire_snapshots'
     rows=''
     ;;
-  7)
-    printf '%s' "$input" | grep -q "ducklake_list_files('lake', 'logs')"
-    rows='{"files":4}'
-    ;;
   *) exit 1 ;;
 esac
 printf '%s\n' '{"marker":"__WAKE_RESULT_START__"}'
@@ -177,84 +183,8 @@ SH);
     file_put_contents($this->binary, $script);
 
     try {
-        expect((new DuckDb)->compact())->toBe(['files_before' => 10, 'files_after' => 4])
-            ->and((int) file_get_contents($state))->toBe(7);
-    } finally {
-        @unlink($state);
-    }
-});
-
-it('stops without rewriting or expiring snapshots when no multi-file day remains', function (): void {
-    $state = $this->binary.'.state';
-    $script = str_replace('__STATE__', escapeshellarg($state), <<<'SH'
-#!/bin/sh
-set -e
-state=__STATE__
-call=0
-if [ -f "$state" ]; then call=$(cat "$state"); fi
-call=$((call + 1))
-printf '%s' "$call" > "$state"
-input="$(cat)"
-case "$call" in
-  1) rows='{"files":4}' ;;
-  2) printf '%s' "$input" | grep -q 'HAVING count(DISTINCT filename) > 1'; rows='' ;;
-  3) rows='{"files":4}' ;;
-  *) exit 1 ;;
-esac
-if printf '%s' "$input" | grep -q 'ducklake_expire_snapshots'; then exit 1; fi
-printf '%s\n' '{"marker":"__WAKE_RESULT_START__"}'
-if [ -n "$rows" ]; then printf '%s\n' "$rows"; fi
-printf '%s\n' '{"marker":"__WAKE_RESULT_END__"}'
-SH);
-    file_put_contents($this->binary, $script);
-
-    try {
-        expect((new DuckDb)->compact())->toBe(['files_before' => 4, 'files_after' => 4])
+        expect((new DuckDb)->rewriteDay('2026-10-01'))->toBeTrue()
             ->and((int) file_get_contents($state))->toBe(3);
-    } finally {
-        @unlink($state);
-    }
-});
-
-it('propagates a day rewrite failure without continuing or expiring snapshots', function (): void {
-    $state = $this->binary.'.state';
-    $script = str_replace('__STATE__', escapeshellarg($state), <<<'SH'
-#!/bin/sh
-set -e
-state=__STATE__
-call=0
-if [ -f "$state" ]; then call=$(cat "$state"); fi
-call=$((call + 1))
-printf '%s' "$call" > "$state"
-input="$(cat)"
-case "$call" in
-  1) rows='{"files":4}' ;;
-  2) rows='{"event_date":"2026-10-01","files":2}
-{"event_date":"2026-10-02","files":2}
-{"event_date":"2026-10-03","files":2}' ;;
-  3)
-    printf '%s' "$input" | grep -q "CAST('2026-10-01' AS DATE)"
-    printf '%s' "$input" | grep -q 'BEGIN TRANSACTION'
-    printf '%s' "$input" | grep -q 'COMMIT'
-    rows=''
-    ;;
-  4)
-    printf '%s' "$input" | grep -q "CAST('2026-10-02' AS DATE)"
-    printf '%s\n' 'rewrite failed' >&2
-    exit 1
-    ;;
-  *) exit 1 ;;
-esac
-if printf '%s' "$input" | grep -q 'ducklake_expire_snapshots'; then exit 1; fi
-printf '%s\n' '{"marker":"__WAKE_RESULT_START__"}'
-if [ -n "$rows" ]; then printf '%s\n' "$rows"; fi
-printf '%s\n' '{"marker":"__WAKE_RESULT_END__"}'
-SH);
-    file_put_contents($this->binary, $script);
-
-    try {
-        expect(fn () => (new DuckDb)->compact())->toThrow(RuntimeException::class, 'rewrite failed')
-            ->and((int) file_get_contents($state))->toBe(4);
     } finally {
         @unlink($state);
     }

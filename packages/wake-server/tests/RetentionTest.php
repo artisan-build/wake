@@ -21,9 +21,14 @@ final class RecordingLakeMaintenance implements LakeMaintenance
 
     public bool $cleaned = false;
 
-    public function compact(): array
+    public function fragmentedDays(int $limit = 3): array
     {
-        return ['files_before' => 0, 'files_after' => 0];
+        return [];
+    }
+
+    public function rewriteDay(string $day): bool
+    {
+        return false;
     }
 
     public function deleteBefore(DateTimeInterface $cutoff): int

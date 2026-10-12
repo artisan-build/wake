@@ -8,12 +8,14 @@ use ArtisanBuild\WakeServer\Console\Commands\BootstrapLake;
 use ArtisanBuild\WakeServer\Console\Commands\CompactLake;
 use ArtisanBuild\WakeServer\Console\Commands\FlushLogs;
 use ArtisanBuild\WakeServer\Console\Commands\RetainLogs;
+use ArtisanBuild\WakeServer\Lake\BoundedLakeReader;
 use ArtisanBuild\WakeServer\Lake\DuckDb;
 use ArtisanBuild\WakeServer\Lake\LakeAppDeletion;
 use ArtisanBuild\WakeServer\Lake\LakeMaintenance;
 use ArtisanBuild\WakeServer\Lake\LakeReader;
 use ArtisanBuild\WakeServer\Lake\LakeWriter;
 use ArtisanBuild\WakeServer\Lake\LakeWriterLock;
+use ArtisanBuild\WakeServer\Lake\PostgresLakeReadGate;
 use ArtisanBuild\WakeServer\Lake\PostgresLakeWriterLock;
 use Illuminate\Support\ServiceProvider;
 
@@ -25,7 +27,10 @@ final class WakeServerServiceProvider extends ServiceProvider
         $this->app->singleton(LakeWriter::class, DuckDb::class);
         $this->app->singleton(LakeAppDeletion::class, DuckDb::class);
         $this->app->singleton(LakeMaintenance::class, DuckDb::class);
-        $this->app->singleton(LakeReader::class, DuckDb::class);
+        $this->app->singleton(LakeReader::class, fn (): BoundedLakeReader => new BoundedLakeReader(
+            new DuckDb('wake-server.lake.read.threads', 'wake-server.lake.read.memory_limit'),
+            new PostgresLakeReadGate,
+        ));
         $this->app->singleton(LakeWriterLock::class, PostgresLakeWriterLock::class);
     }
 

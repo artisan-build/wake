@@ -61,6 +61,7 @@ it('builds bounded UTC day-pruned literal and regex searches without raw fragmen
         'regex' => "failed('|;) DROP TABLE logs",
     ]);
     expect($this->lake->sql[1])->toContain("regexp_matches(message, 'failed(''|;) DROP TABLE logs', 'i')")
+        ->toStartWith('SET force_download_threshold=67108864; ')
         ->not->toContain('app_id =');
 });
 

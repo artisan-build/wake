@@ -49,6 +49,6 @@ final class SearchLogs extends WakeTool
             throw ValidationException::withMessages(['search' => 'Specify exactly one of text or regex.']);
         }
 
-        return $this->untrusted(resolve(WakeQueries::class)->search($validated));
+        return $this->untrustedLake(fn (): array => resolve(WakeQueries::class)->search($validated));
     }
 }

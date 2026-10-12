@@ -8,6 +8,8 @@ use App\Authorization\McpAccess;
 use App\Authorization\WakeCredentialAbility;
 use ArtisanBuild\BuiltForCloud\Console\ActingPrincipal;
 use ArtisanBuild\BuiltForCloud\Mcp\RespectsEffectCeiling;
+use ArtisanBuild\WakeServer\Lake\LakeBusyException;
+use Closure;
 use Illuminate\Validation\ValidationException;
 use Laravel\Mcp\Request;
 use Laravel\Mcp\Response;
@@ -83,5 +85,15 @@ abstract class WakeTool extends Tool
             $content,
             JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE,
         ));
+    }
+
+    /** @param Closure(): array<string, mixed> $read */
+    protected function untrustedLake(Closure $read): Response
+    {
+        try {
+            return $this->untrusted($read());
+        } catch (LakeBusyException $exception) {
+            return Response::error($exception->getMessage());
+        }
     }
 }

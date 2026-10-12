@@ -35,7 +35,12 @@ final readonly class WakeQueries
             ? 'contains(lower(message), lower('.$this->lake->literal($text).'))'
             : 'regexp_matches(message, '.$this->lake->literal($regex).", 'i')";
 
-        return ['rows' => $this->lake->query($this->lakeSelect($where, $this->limit($filters)))];
+        $sql = $this->lakeSelect($where, $this->limit($filters));
+        if ($allApps && $from->diffInSeconds($to) <= 86_400) {
+            $sql = 'SET force_download_threshold='.$this->allAppsFullDownloadThreshold().'; '.$sql;
+        }
+
+        return ['rows' => $this->lake->query($sql)];
     }
 
     /** @param array<string, mixed> $filters
@@ -226,6 +231,16 @@ final readonly class WakeQueries
         }
 
         return $limit;
+    }
+
+    private function allAppsFullDownloadThreshold(): int
+    {
+        $threshold = config('wake-server.lake.read.all_apps_full_download_threshold');
+        if (! is_int($threshold) || $threshold < 1) {
+            throw new InvalidArgumentException('The all-apps full-download threshold must be a positive integer.');
+        }
+
+        return $threshold;
     }
 
     /** @param array<string, mixed> $filters */

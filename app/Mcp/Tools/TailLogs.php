@@ -44,6 +44,6 @@ final class TailLogs extends WakeTool
             'limit' => ['nullable', 'integer', 'min:1', 'max:500'],
         ], ['app', 'all_apps', 'environment', 'level', 'from', 'to', 'cursor', 'limit']);
 
-        return $this->untrusted(resolve(WakeQueries::class)->tail($validated));
+        return $this->untrustedLake(fn (): array => resolve(WakeQueries::class)->tail($validated));
     }
 }

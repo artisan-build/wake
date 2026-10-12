@@ -8,6 +8,7 @@ use ArtisanBuild\WakeClient\Console\WakeDoctorCommand;
 use ArtisanBuild\WakeClient\Contracts\PayloadFilter;
 use ArtisanBuild\WakeClient\Contracts\Transport;
 use ArtisanBuild\WakeClient\Filters\PassThroughPayloadFilter;
+use ArtisanBuild\WakeClient\Logging\DefaultChannelAttacher;
 use ArtisanBuild\WakeClient\Logging\RecordNormalizer;
 use ArtisanBuild\WakeClient\Logging\WakeChannelFactory;
 use ArtisanBuild\WakeClient\Logging\WakeHandler;
@@ -16,7 +17,6 @@ use ArtisanBuild\WakeContracts\IngestProtocol;
 use Illuminate\Contracts\Config\Repository;
 use Illuminate\Contracts\Container\Container;
 use Illuminate\Http\Client\Factory;
-use Illuminate\Log\Logger as IlluminateLogger;
 use Illuminate\Log\LogManager;
 use Illuminate\Support\ServiceProvider;
 use LogicException;
@@ -45,6 +45,7 @@ final class WakeClientServiceProvider extends ServiceProvider
             timeout: max(0.01, self::floatConfig($app, 'wake.timeout', 2.0)),
         ));
         $this->app->singleton(Logging\LifecycleRegistrar::class);
+        $this->app->singleton(DefaultChannelAttacher::class);
         $this->app->singleton(WakeChannelFactory::class);
         $this->app->singleton(RecordNormalizer::class, fn (Container $app): RecordNormalizer => new RecordNormalizer(
             correlations: self::resolve($app, Logging\CorrelationResolver::class),
@@ -81,23 +82,7 @@ final class WakeClientServiceProvider extends ServiceProvider
                 return;
             }
 
-            $logger = self::resolve($this->app, LogManager::class)->driver();
-            if (! $logger instanceof IlluminateLogger) {
-                return;
-            }
-
-            $monolog = $logger->getLogger();
-            if (! $monolog instanceof Logger) {
-                return;
-            }
-
-            foreach ($monolog->getHandlers() as $handler) {
-                if ($handler instanceof WakeHandler) {
-                    return;
-                }
-            }
-
-            $monolog->pushHandler(self::resolve($this->app, WakeHandler::class));
+            self::resolve($this->app, DefaultChannelAttacher::class)->attach();
         });
 
         if ($this->app->runningInConsole()) {

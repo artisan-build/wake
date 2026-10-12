@@ -14,6 +14,7 @@ use Illuminate\Support\Facades\Http;
 use Monolog\Handler\TestHandler;
 use Monolog\Logger;
 use Orchestra\Testbench\Attributes\DefineEnvironment;
+use Psr\Log\AbstractLogger;
 
 final class AutoAttachTest extends TestCase
 {
@@ -77,6 +78,70 @@ final class AutoAttachTest extends TestCase
         self::assertCount(1, Http::recorded());
     }
 
+    #[DefineEnvironment('defineWrappedWakeStack')]
+    public function test_it_delivers_once_when_the_existing_wake_handler_is_wrapped(): void
+    {
+        $this->fakeWake();
+        $host = $this->channelHandler('stderr');
+
+        $this->app->make(LogManager::class)->info('wrapped record');
+        $this->app->terminate();
+
+        self::assertCount(1, $host->getRecords());
+        self::assertSame(['wrapped record'], $this->wakeMessages());
+        self::assertCount(1, Http::recorded());
+    }
+
+    #[DefineEnvironment('defineNonBubblingWakeStack')]
+    public function test_it_delivers_once_before_a_non_bubbling_host_handler(): void
+    {
+        $this->fakeWake();
+        $host = $this->channelHandler('host');
+        self::assertFalse($host->getBubble());
+
+        $this->app->make(LogManager::class)->info('non-bubbling record');
+        $this->app->terminate();
+
+        self::assertCount(1, $host->getRecords());
+        self::assertSame(['non-bubbling record'], $this->wakeMessages());
+        self::assertCount(1, Http::recorded());
+    }
+
+    #[DefineEnvironment('defineNonMonologCustomChannel')]
+    public function test_doctor_reports_an_incompatible_custom_default_without_probing_ingest(): void
+    {
+        Http::fake(['*' => Http::response([
+            'batch_id' => '01ARZ3NDEKTSV4RRFFQ69G5FAW',
+            'accepted_count' => 1,
+            'duplicate' => false,
+        ], 202, ['Content-Type' => 'application/json'])]);
+        $host = $this->app->make(RecordingPsrLogger::class);
+        $active = $this->app->make(LogManager::class)->driver();
+        self::assertInstanceOf(IlluminateLogger::class, $active);
+        self::assertSame($host, $active->getLogger());
+
+        $this->app->make(LogManager::class)->info('custom host record');
+        $this->artisan('wake:doctor')
+            ->assertFailed()
+            ->expectsOutputToContain('not attached: default channel is not Monolog-backed')
+            ->expectsOutputToContain('built-in Laravel log driver')
+            ->expectsOutputToContain('driver=monolog');
+
+        self::assertSame(['custom host record'], $host->messages());
+        self::assertSame($host, $this->app->make(LogManager::class)->driver()->getLogger());
+        Http::assertNothingSent();
+    }
+
+    #[DefineEnvironment('defineOptedOutNonMonologCustomChannel')]
+    public function test_doctor_keeps_its_explicit_probe_for_an_opted_out_custom_default(): void
+    {
+        $this->fakeWake();
+
+        $this->artisan('wake:doctor')->assertSuccessful();
+
+        self::assertCount(1, Http::recorded());
+    }
+
     #[DefineEnvironment('defineAutoAttachDisabled')]
     public function test_it_leaves_the_host_untouched_when_auto_attach_is_disabled(): void
     {
@@ -108,6 +173,28 @@ final class AutoAttachTest extends TestCase
     protected function defineStackContainingWake(Application $app): void
     {
         $this->configure($app, 'stack', ['stderr', 'wake'], true, 'https://wake.test', 'synthetic-token');
+    }
+
+    protected function defineWrappedWakeStack(Application $app): void
+    {
+        $this->configure($app, 'stack', ['stderr', 'wake'], true, 'https://wake.test', 'synthetic-token');
+        $app->make(Repository::class)->set('logging.channels.stack.ignore_exceptions', true);
+    }
+
+    protected function defineNonBubblingWakeStack(Application $app): void
+    {
+        $this->configure($app, 'stack', ['host', 'wake'], true, 'https://wake.test', 'synthetic-token');
+        $app->make(Repository::class)->set('logging.channels.host.handler_with', ['bubble' => false]);
+    }
+
+    protected function defineNonMonologCustomChannel(Application $app): void
+    {
+        $this->configureCustomChannel($app, true);
+    }
+
+    protected function defineOptedOutNonMonologCustomChannel(Application $app): void
+    {
+        $this->configureCustomChannel($app, false);
     }
 
     protected function defineAutoAttachDisabled(Application $app): void
@@ -167,6 +254,17 @@ final class AutoAttachTest extends TestCase
         self::assertCount(0, Http::recorded());
     }
 
+    private function configureCustomChannel(Application $app, bool $autoAttach): void
+    {
+        $host = new RecordingPsrLogger;
+        $app->instance(RecordingPsrLogger::class, $host);
+        $this->configure($app, 'custom', [], $autoAttach, 'https://wake.test', 'synthetic-token');
+        $app->make(Repository::class)->set('logging.channels.custom', [
+            'driver' => 'custom',
+            'via' => static fn (array $config): RecordingPsrLogger => $host,
+        ]);
+    }
+
     private function fakeWake(): void
     {
         Http::fake(static function (Request $request) {
@@ -188,6 +286,16 @@ final class AutoAttachTest extends TestCase
         self::assertInstanceOf(Logger::class, $monolog);
 
         return $monolog;
+    }
+
+    private function channelHandler(string $channel): TestHandler
+    {
+        $logger = $this->app->make(LogManager::class)->channel($channel);
+        self::assertInstanceOf(IlluminateLogger::class, $logger);
+        $monolog = $logger->getLogger();
+        self::assertInstanceOf(Logger::class, $monolog);
+
+        return $this->handler($monolog->getHandlers(), TestHandler::class);
     }
 
     /**
@@ -235,5 +343,22 @@ final class AutoAttachTest extends TestCase
         }
 
         return $messages;
+    }
+}
+
+final class RecordingPsrLogger extends AbstractLogger
+{
+    /** @var list<string> */
+    private array $messages = [];
+
+    public function log($level, string|\Stringable $message, array $context = []): void
+    {
+        $this->messages[] = (string) $message;
+    }
+
+    /** @return list<string> */
+    public function messages(): array
+    {
+        return $this->messages;
     }
 }

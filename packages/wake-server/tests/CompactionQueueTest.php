@@ -62,6 +62,15 @@ final class RecordingRewriteLock implements LakeWriterLock
     }
 }
 
+it('declares a bounded retry budget above the managed worker default', function (): void {
+    $job = new RewriteLakeDay('2026-10-01');
+
+    expect($job->tries)->toBe(3)
+        ->and($job->timeout)->toBe(85)
+        ->and($job->connection)->toBe('cloud')
+        ->and($job->queue)->toBe('wake-lake');
+});
+
 it('dispatches only the oldest three days to the managed cloud queue without rewriting', function (): void {
     Queue::fake();
     $lake = new QueueCompactionLake(['2026-10-01', '2026-10-02', '2026-10-03', '2026-10-04']);

@@ -20,6 +20,15 @@ it('publishes linked setup redaction retention and ingest contract pages', funct
     expect(Route::has('docs.show'))->toBeTrue();
 });
 
+it('contains wide generated Markdown code inside the 390px documentation column', function (): void {
+    $response = $this->get('/docs/setup')->assertOk()
+        ->assertSee('[data-testid="documentation-content"] pre', false)
+        ->assertSee('max-width: 100%; overflow-x: auto; white-space: pre;', false)
+        ->assertSee('min-width:0; overflow:hidden;', false);
+
+    expect($response->getContent())->not->toContain('min-width: max-content', 'overflow-x: visible');
+});
+
 it('documents the exact client setup and raw payload risk', function (): void {
     $response = $this->get('/docs/setup')->assertOk()
         ->assertSee('composer require artisan-build/wake-client')

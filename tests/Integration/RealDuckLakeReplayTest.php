@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Services\WakeQueries;
 use ArtisanBuild\WakeServer\Lake\DuckDb;
 use ArtisanBuild\WakeServer\Lake\FlushLogBatches;
 use ArtisanBuild\WakeServer\Lake\LakeWriterLock;
@@ -207,6 +208,47 @@ it('allows only one synchronized independent flusher to perform real lake work',
         }
         File::deleteDirectory($coordination);
     }
+});
+
+it('executes Wake query search tail and context through the production DuckDB driver', function (): void {
+    expect(is_executable(base_path('bin/duckdb')))->toBeTrue('Run scripts/install-duckdb.sh before the root test lane.');
+    $lake = resolve(DuckDb::class);
+    $queries = new WakeQueries($lake);
+    $older = (string) Str::ulid();
+    $target = (string) Str::ulid();
+    $newest = (string) Str::ulid();
+    $other = (string) Str::ulid();
+    $row = static fn (string $eventId, string $app, string $at, string $message): array => [
+        'event_id' => $eventId, 'app_id' => $app, 'occurred_at' => $at,
+        'level' => 'info', 'channel' => 'app', 'message' => $message,
+        'context' => ['source' => $app], 'extra' => [], 'exception' => null,
+        'environment' => 'testing', 'hostname' => 'localhost', 'correlation_id' => 'query-proof',
+    ];
+    $lake->bootstrap();
+    $lake->commitBatch((string) Str::ulid(), [
+        $row($older, 'alpha', '2026-10-11T12:00:00.000000Z', 'needle older'),
+        $row($target, 'alpha', '2026-10-11T12:02:00.000000Z', 'needle target'),
+        $row($newest, 'alpha', '2026-10-11T12:03:00.000000Z', 'tail newest'),
+        $row($other, 'beta', '2026-10-11T12:04:00.000000Z', 'needle other app'),
+    ]);
+    DB::table('wake_event_locators')->insert([
+        'event_id' => $target, 'app_id' => 'alpha', 'event_date' => '2026-10-11',
+        'occurred_at' => '2026-10-11 12:02:00+00',
+    ]);
+    $window = ['app' => 'alpha', 'from' => '2026-10-11T00:00:00Z', 'to' => '2026-10-12T00:00:00Z'];
+
+    $search = $queries->search([...$window, 'text' => 'needle', 'limit' => 10]);
+    $tail = $queries->tail([...$window, 'limit' => 2]);
+    $tailNext = $queries->tail([...$window, 'cursor' => $tail['next_cursor'], 'limit' => 2]);
+    $context = $queries->context('alpha', $target, 1, 1);
+
+    expect(array_column($search['rows'], 'event_id'))->toBe([$target, $older])
+        ->and(array_column($tail['rows'], 'event_id'))->toBe([$newest, $target])
+        ->and($tail['next_cursor'])->toBeString()
+        ->and(array_column($tailNext['rows'], 'event_id'))->toBe([$older])
+        ->and(array_column($context['rows'], 'event_id'))->toBe([$older, $target, $newest])
+        ->and(array_unique(array_column($context['rows'], 'app_id')))->toBe(['alpha'])
+        ->and(array_column($search['rows'], 'event_id'))->not->toContain($other);
 });
 
 /** @return array{string, string} */

@@ -6,7 +6,7 @@ use App\Console\Commands\LoadVerificationCorpus;
 use App\Verification\ScaleCorpusLoader;
 
 it('refuses a missing or wrong confirmation before resolving the loader', function (?string $confirmation): void {
-    app()->bind(ScaleCorpusLoader::class, function (): never {
+    app()->bind(function (): ScaleCorpusLoader {
         throw new RuntimeException('loader was resolved');
     });
     $arguments = ['--rows' => '1', '--apps' => '1', '--days' => '1', '--chunk' => '1'];
@@ -21,7 +21,7 @@ it('refuses a missing or wrong confirmation before resolving the loader', functi
 })->with(['missing' => null, 'wrong' => 'yes']);
 
 it('prints the default plan without resolving the loader or writing', function (): void {
-    app()->bind(ScaleCorpusLoader::class, function (): never {
+    app()->bind(function (): ScaleCorpusLoader {
         throw new RuntimeException('loader was resolved');
     });
 
@@ -32,7 +32,7 @@ it('prints the default plan without resolving the loader or writing', function (
 });
 
 it('rejects invalid command options before resolving the loader', function (string $option, string $value): void {
-    app()->bind(ScaleCorpusLoader::class, function (): never {
+    app()->bind(function (): ScaleCorpusLoader {
         throw new RuntimeException('loader was resolved');
     });
 

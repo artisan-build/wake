@@ -10,13 +10,13 @@ use Closure;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
-final class ScaleCorpusLoader
+final readonly class ScaleCorpusLoader
 {
     /** @param null|Closure(string, int): void $fault */
     public function __construct(
-        private readonly DuckDb $lake,
-        private readonly LakeWriterLock $lock,
-        private readonly ?Closure $fault = null,
+        private DuckDb $lake,
+        private LakeWriterLock $lock,
+        private ?Closure $fault = null,
     ) {}
 
     /**

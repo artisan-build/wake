@@ -50,7 +50,7 @@ final class LoadVerificationCorpus extends Command
 
         $started = microtime(true);
         try {
-            $counts = app(ScaleCorpusLoader::class)->run($plan, function (int $completed, int $total, int $chunk) use ($started, $plan): void {
+            $counts = resolve(ScaleCorpusLoader::class)->run($plan, function (int $completed, int $total, int $chunk) use ($started, $plan): void {
                 $this->line(sprintf('run_key=%s completed=%d total=%d chunk=%d elapsed_seconds=%.3f', $plan->runKey, $completed, $total, $chunk, microtime(true) - $started));
             });
         } catch (Throwable) {

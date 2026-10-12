@@ -8,8 +8,10 @@ use DateTimeInterface;
 
 interface LakeMaintenance
 {
-    /** @return array{files_before: int, files_after: int} */
-    public function compact(): array;
+    /** @return list<string> */
+    public function fragmentedDays(int $limit = 3): array;
+
+    public function rewriteDay(string $day): bool;
 
     public function deleteBefore(DateTimeInterface $cutoff): int;
 

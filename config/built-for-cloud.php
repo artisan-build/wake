@@ -2,7 +2,11 @@
 
 declare(strict_types=1);
 
+use App\View\Components\WakeLayout;
+
 return [
+    'layout' => WakeLayout::class,
+
     'manifest' => [
         'name' => 'Wake',
         'slug' => 'wake',

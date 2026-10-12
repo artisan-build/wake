@@ -42,6 +42,9 @@ it('renders accessible list create and detail pages with the exact setup snippet
         ->assertSee('<h1', false)
         ->assertSee('for="app-id"', false)
         ->assertSee('for="app-name"', false)
+        ->assertSee('[data-testid="apps-create"] input', false)
+        ->assertSee('border: 1px solid var(--color-clay-edge)', false)
+        ->assertSee('input:focus-visible', false)
         ->assertSee('name="_token"', false)
         ->assertSee('No apps have been connected yet.');
 
@@ -179,7 +182,10 @@ it('serves a public landing page that routes people to the admin without viewer 
         ->assertSee('self-hosted log sink')
         ->assertSee('Logs are sent as written')
         ->assertSee('href="http://localhost/apps"', false)
-        ->assertSee('data-testid="landing-admin"', false);
+        ->assertSee('data-testid="landing-admin"', false)
+        ->assertSee('<link rel="icon" href="http://localhost/favicon.svg">', false)
+        ->assertSee('<img src="http://localhost/favicon.svg"', false)
+        ->assertDontSee('https://scalpels.app/img/products/transparent/wake.png', false);
 
     expect($response->getContent())->not->toContain('Log viewer', 'Search logs', '<canvas', 'Charts', 'Alerts');
     $this->get('/apps')->assertRedirect('/bfc/login');

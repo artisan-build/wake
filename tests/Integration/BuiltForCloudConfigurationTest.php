@@ -1,5 +1,6 @@
 <?php
 
+use App\View\Components\WakeLayout;
 use ArtisanBuild\BuiltForCloud\BuiltForCloudServiceProvider;
 use ArtisanBuild\BuiltForCloud\User;
 use Illuminate\Support\Facades\Artisan;
@@ -10,6 +11,7 @@ it('owns only the D-UI-3 application configuration overlay', function (): void {
     $appConfig = require config_path('built-for-cloud.php');
 
     expect($appConfig)->toBe([
+        'layout' => WakeLayout::class,
         'manifest' => [
             'name' => 'Wake',
             'slug' => 'wake',
@@ -53,6 +55,7 @@ it('merges package defaults and auto-discovers the released provider', function 
         'managed_transitions' => false,
         'credential_purposes' => [],
     ])->and(config('built-for-cloud.product'))->toBe(config('app.name'))
+        ->and(config('built-for-cloud.layout'))->toBe(WakeLayout::class)
         ->and(config('built-for-cloud.credentials.guard'))->toBe('bfc')
         ->and(config('built-for-cloud.credentials.app_purposes'))->toBe([
             'wake.ingest' => 'consumption',

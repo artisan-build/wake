@@ -1,4 +1,8 @@
 <x-bfc-layout title="Apps">
+<style>
+    [data-testid="apps-create"] input { width: 100%; border: 1px solid var(--color-clay-edge); border-radius: .75rem; background: var(--color-clay-surface); padding: .75rem 1rem; color: var(--color-clay-ink); }
+    [data-testid="apps-create"] input:focus-visible { outline: 3px solid var(--color-clay-iron); outline-offset: 2px; }
+</style>
 <section data-testid="apps-index" class="grid gap-8">
     <header class="grid gap-4">
         <h1 class="font-display text-4xl font-normal tracking-tight text-clay-ink">Apps</h1>

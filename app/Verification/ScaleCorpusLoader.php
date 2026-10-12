@@ -188,7 +188,7 @@ final readonly class ScaleCorpusLoader
     private function counts(ScaleCorpusPlan $plan): array
     {
         $prefix = "verify-{$plan->runKey}-app-";
-        $lake = $this->lake->query('SELECT count(*) AS rows FROM lake.logs WHERE starts_with(app_id, '.$this->lake->literal($prefix).');');
+        $lake = $this->lake->query('SELECT count(*) AS rows FROM lake.logs WHERE starts_with(app_id, '.$this->lake->literal($prefix).');', 300);
 
         return [
             'lake_rows' => (int) ($lake[0]['rows'] ?? 0),

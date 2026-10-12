@@ -100,6 +100,32 @@ it('reconciles an interruption after the real lake commit without double countin
         ->and(DB::table('wake_verification_chunks')->where('run_key', $plan->runKey)->value('state'))->toBe('done');
 });
 
+it('allows the final all-corpus summary longer than the default DuckDB timeout', function (): void {
+    $binary = storage_path('framework/testing/slow-summary-duckdb-'.strtolower((string) Str::ulid()));
+    File::put($binary, <<<'SH'
+        #!/bin/sh
+        input=$(cat)
+        printf '%s\n' '{"marker":"__WAKE_RESULT_START__"}'
+        case "$input" in
+          *"starts_with(app_id"*) sleep 21; printf '%s\n' '{"rows":1}' ;;
+          *"event_date IN"*) printf '%s\n' '{"rows":1}' ;;
+        esac
+        printf '%s\n' '{"marker":"__WAKE_RESULT_END__"}'
+        SH);
+    chmod($binary, 0755);
+    $original = config('wake-server.lake.binary');
+    config()->set('wake-server.lake.binary', $binary);
+
+    try {
+        $result = (new ScaleCorpusLoader(new DuckDb, resolve(LakeWriterLock::class)))->run(new ScaleCorpusPlan('slow-summary', 1, 1, 1, 1));
+
+        expect($result)->toBe(['lake_rows' => 1, 'locators' => 1, 'errors' => 1, 'hourly_events' => 1]);
+    } finally {
+        config()->set('wake-server.lake.binary', $original);
+        File::delete($binary);
+    }
+});
+
 function verificationLakeRows(DuckDb $lake, ScaleCorpusPlan $plan): int
 {
     $rows = $lake->query('SELECT count(*) AS rows FROM lake.logs WHERE batch_id = '.$lake->literal($plan->batchId(0)).';');

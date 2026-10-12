@@ -14,6 +14,7 @@
     <section class="bfc-panel" aria-labelledby="landing-raw-title">
         <h2 id="landing-raw-title">Logs are sent as written</h2>
         <p class="mt-4">Wake stores the log records each app sends without changing them. Logs can contain secrets, tokens, or personal data. Configure redaction in each client app before sending anything that should not be stored.</p>
+        <a class="bfc-link" href="{{ route('docs.show', 'setup') }}">Read the setup guide</a>
     </section>
 </section>
 </x-bfc-layout>

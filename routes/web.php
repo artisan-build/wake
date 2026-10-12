@@ -3,7 +3,12 @@
 declare(strict_types=1);
 
 use App\Http\Controllers\ConnectedAppsController;
+use App\Http\Controllers\DocumentationController;
 use Illuminate\Support\Facades\Route;
+
+Route::get('/docs/{page}', DocumentationController::class)
+    ->whereIn('page', ['setup', 'agent-redaction', 'retention-cost', 'ingest-contract'])
+    ->name('docs.show');
 
 Route::middleware(['web', 'bfc.auth'])->prefix('apps')->name('apps.')->group(function (): void {
     Route::get('/', [ConnectedAppsController::class, 'index'])->name('index');

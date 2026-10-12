@@ -13,6 +13,7 @@ use Illuminate\Support\Str;
 use Monolog\Handler\AbstractHandler;
 use Monolog\LogRecord;
 use Throwable;
+use WeakMap;
 
 final class WakeHandler extends AbstractHandler
 {
@@ -27,22 +28,35 @@ final class WakeHandler extends AbstractHandler
 
     private ?bool $lastDeliverySucceeded = null;
 
+    /** @var WeakMap<object, true> */
+    private WeakMap $acceptedIdentities;
+
+    /** @var WeakMap<LogRecord, true> */
+    private WeakMap $acceptedRecords;
+
     public function __construct(
         private readonly RecordNormalizer $normalizer,
         private readonly PayloadFilter $filter,
         private readonly Transport $transport,
+        private readonly RecordIdentityRegistry $identities,
         private readonly ?string $url,
         private readonly ?string $token,
         private readonly int $batchSize,
         private readonly int $maxBuffer,
     ) {
         parent::__construct();
+        $this->acceptedIdentities = new WeakMap;
+        $this->acceptedRecords = new WeakMap;
     }
 
     /** @phpstan-impure */
     public function handle(LogRecord $record): bool
     {
         if (! $this->configured() || $this->delivering || $this->handling) {
+            return false;
+        }
+
+        if (! $this->acceptOnce($record)) {
             return false;
         }
 
@@ -136,5 +150,27 @@ final class WakeHandler extends AbstractHandler
     private function configured(): bool
     {
         return is_string($this->url) && $this->url !== '' && is_string($this->token) && $this->token !== '';
+    }
+
+    private function acceptOnce(LogRecord $record): bool
+    {
+        $identity = $this->identities->identity($record);
+        if ($identity !== null) {
+            if (isset($this->acceptedIdentities[$identity])) {
+                return false;
+            }
+
+            $this->acceptedIdentities[$identity] = true;
+
+            return true;
+        }
+
+        if (isset($this->acceptedRecords[$record])) {
+            return false;
+        }
+
+        $this->acceptedRecords[$record] = true;
+
+        return true;
     }
 }

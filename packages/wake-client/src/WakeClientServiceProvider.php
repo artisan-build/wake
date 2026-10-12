@@ -8,6 +8,7 @@ use ArtisanBuild\WakeClient\Console\WakeDoctorCommand;
 use ArtisanBuild\WakeClient\Contracts\PayloadFilter;
 use ArtisanBuild\WakeClient\Contracts\Transport;
 use ArtisanBuild\WakeClient\Filters\PassThroughPayloadFilter;
+use ArtisanBuild\WakeClient\Logging\DefaultChannelAttacher;
 use ArtisanBuild\WakeClient\Logging\RecordNormalizer;
 use ArtisanBuild\WakeClient\Logging\WakeChannelFactory;
 use ArtisanBuild\WakeClient\Logging\WakeHandler;
@@ -36,6 +37,7 @@ final class WakeClientServiceProvider extends ServiceProvider
 
         $this->app->singleton(PayloadFilter::class, PassThroughPayloadFilter::class);
         $this->app->singleton(Logging\CorrelationState::class);
+        $this->app->singleton(Logging\RecordIdentityRegistry::class);
         $this->app->singleton(Transport::class, fn (Container $app): Transport => new HttpTransport(
             http: self::resolve($app, Factory::class),
             url: self::stringConfig($app, 'wake.url'),
@@ -44,6 +46,7 @@ final class WakeClientServiceProvider extends ServiceProvider
             timeout: max(0.01, self::floatConfig($app, 'wake.timeout', 2.0)),
         ));
         $this->app->singleton(Logging\LifecycleRegistrar::class);
+        $this->app->singleton(DefaultChannelAttacher::class);
         $this->app->singleton(WakeChannelFactory::class);
         $this->app->singleton(RecordNormalizer::class, fn (Container $app): RecordNormalizer => new RecordNormalizer(
             correlations: self::resolve($app, Logging\CorrelationResolver::class),
@@ -54,6 +57,7 @@ final class WakeClientServiceProvider extends ServiceProvider
             normalizer: self::resolve($app, RecordNormalizer::class),
             filter: self::resolve($app, PayloadFilter::class),
             transport: self::resolve($app, Transport::class),
+            identities: self::resolve($app, Logging\RecordIdentityRegistry::class),
             url: self::nullableStringConfig($app, 'wake.url'),
             token: self::nullableStringConfig($app, 'wake.token'),
             batchSize: max(1, min(IngestProtocol::MAX_ROWS, self::intConfig($app, 'wake.batch_size', 100))),
@@ -71,6 +75,18 @@ final class WakeClientServiceProvider extends ServiceProvider
     public function boot(): void
     {
         self::resolve($this->app, Logging\LifecycleRegistrar::class)->register();
+
+        $this->app->booted(function (): void {
+            $config = self::config($this->app);
+            if ($config->get('wake.auto_attach') !== true
+                || blank($config->get('wake.url'))
+                || blank($config->get('wake.token'))) {
+                return;
+            }
+
+            self::resolve($this->app, DefaultChannelAttacher::class)->attach();
+        });
+
         if ($this->app->runningInConsole()) {
             $this->commands([WakeDoctorCommand::class]);
         }

@@ -109,7 +109,7 @@ final class ConnectedAppsController extends Controller
             abort(404);
         }
 
-        return $request->expectsJson() ? response()->noContent() : redirect()->route('apps.show', $app);
+        return $request->expectsJson() ? response()->noContent() : to_route('apps.show', $app);
     }
 
     private function actor(Request $request): AuditActor

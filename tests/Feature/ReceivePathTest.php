@@ -202,7 +202,6 @@ it('returns 403 for valid credentials with disallowed purpose ownership subject 
         ['wrong-purpose', ['purpose' => CredentialPurpose::Mcp], true, true],
         ['account-bound', ['user_id' => 'user-1'], true, true],
         ['wrong-subject', ['subject_type' => SubjectType::ExternalConsumer], true, true],
-        ['missing-app', [], false, true],
         ['disabled-app', [], true, false],
     ];
 

@@ -9,6 +9,7 @@ use ArtisanBuild\BuiltForCloud\CredentialKind;
 use ArtisanBuild\BuiltForCloud\CredentialPurpose;
 use ArtisanBuild\BuiltForCloud\CredentialStatus;
 use ArtisanBuild\BuiltForCloud\SubjectType;
+use ArtisanBuild\WakeServer\Models\ConnectedApp;
 use Illuminate\Support\Str;
 
 final class IngestCredentialTarget
@@ -29,12 +30,18 @@ final class IngestCredentialTarget
             return null;
         }
 
+        $subjectRef = ConnectedApp::query()->whereKey($appId)->value('subject_ref');
+
+        if (! is_string($subjectRef)) {
+            return null;
+        }
+
         $query = Credential::query()
             ->whereKey($credentialId)
             ->where('kind', CredentialKind::Bearer)
             ->where('purpose', CredentialPurpose::Consumption)
             ->where('subject_type', SubjectType::Installation)
-            ->where('subject_ref', $appId)
+            ->where('subject_ref', $subjectRef)
             ->whereNull('user_id')
             ->where('status', CredentialStatus::Active)
             ->whereNull('revoked_at')

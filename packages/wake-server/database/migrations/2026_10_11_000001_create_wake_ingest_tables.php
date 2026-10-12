@@ -13,6 +13,7 @@ return new class extends Migration
     {
         Schema::create('wake_connected_apps', function (Blueprint $table): void {
             $table->string('id')->primary();
+            $table->string('subject_ref')->nullable()->unique();
             $table->string('name', 100)->nullable()->unique();
             $table->boolean('enabled')->default(true);
             $table->unsignedInteger('batches_per_minute')->nullable();

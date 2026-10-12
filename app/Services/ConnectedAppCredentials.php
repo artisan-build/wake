@@ -37,6 +37,7 @@ final readonly class ConnectedAppCredentials
         return DB::transaction(function () use ($id, $name, $actor): array {
             $app = ConnectedApp::query()->create([
                 'id' => $id,
+                'subject_ref' => $id,
                 'name' => $name,
                 'enabled' => true,
             ]);
@@ -57,11 +58,17 @@ final readonly class ConnectedAppCredentials
 
     public function current(string $appId): ?Credential
     {
+        $subjectRef = ConnectedApp::query()->whereKey($appId)->value('subject_ref');
+
+        if (! is_string($subjectRef)) {
+            return null;
+        }
+
         return Credential::query()
             ->where('kind', CredentialKind::Bearer)
             ->where('purpose', CredentialPurpose::Consumption)
             ->where('subject_type', SubjectType::Installation)
-            ->where('subject_ref', $appId)
+            ->where('subject_ref', $subjectRef)
             ->whereNull('user_id')
             ->where('status', CredentialStatus::Active)
             ->whereNull('rotated_at')
@@ -94,7 +101,7 @@ final readonly class ConnectedAppCredentials
         return ($this->revoke)(
             $target->id,
             $actor,
-            new Subject(SubjectType::Installation, $appId),
+            new Subject(SubjectType::Installation, $target->subject_ref),
         );
     }
 }

@@ -3,6 +3,8 @@
 namespace App\Providers;
 
 use App\Authorization\WakeCredentialAbility;
+use App\Services\ProvisionConnectedApp;
+use ArtisanBuild\BuiltForCloud\Credential;
 use ArtisanBuild\BuiltForCloud\CredentialAbilityRegistry;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Date;
@@ -27,6 +29,9 @@ class AppServiceProvider extends ServiceProvider
     public function boot(CredentialAbilityRegistry $credentialAbilities): void
     {
         $credentialAbilities->register(WakeCredentialAbility::Read->value);
+        Credential::created(static function (Credential $credential): void {
+            resolve(ProvisionConnectedApp::class)->forCredential($credential);
+        });
         $this->configureDefaults();
     }
 

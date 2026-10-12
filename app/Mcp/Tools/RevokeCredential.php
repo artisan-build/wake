@@ -7,6 +7,7 @@ namespace App\Mcp\Tools;
 use App\Services\IngestCredentialTarget;
 use ArtisanBuild\BuiltForCloud\Actions\RevokeCredential as RevokeCredentialAction;
 use ArtisanBuild\BuiltForCloud\AuditActor;
+use ArtisanBuild\BuiltForCloud\Credential;
 use ArtisanBuild\BuiltForCloud\CredentialManagementScope;
 use ArtisanBuild\BuiltForCloud\Mcp\AdvertisesToolClassification;
 use ArtisanBuild\BuiltForCloud\Mcp\AdvertisesToolEffect;
@@ -19,7 +20,6 @@ use ArtisanBuild\BuiltForCloud\RevokeOutcome;
 use ArtisanBuild\BuiltForCloud\Subject;
 use ArtisanBuild\BuiltForCloud\SubjectType;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
-use Illuminate\Support\Facades\DB;
 use Laravel\Mcp\Request;
 use Laravel\Mcp\Response;
 use Laravel\Mcp\Server\Tools\Annotations\IsDestructive;
@@ -43,7 +43,7 @@ final class RevokeCredential extends WakeTool
     {
         $this->authorize();
         [$app, $credentialId] = $this->arguments($request);
-        if (! $this->target($app, $credentialId)) {
+        if ($this->target($app, $credentialId) === null) {
             return $this->missingTarget();
         }
 
@@ -54,7 +54,8 @@ final class RevokeCredential extends WakeTool
     {
         $principal = $this->authorize();
         [$app, $credentialId] = $this->arguments($request);
-        if (! $this->target($app, $credentialId)) {
+        $target = $this->target($app, $credentialId);
+        if ($target === null) {
             return $this->missingTarget();
         }
         $identifier = $principal->identifier();
@@ -62,9 +63,9 @@ final class RevokeCredential extends WakeTool
             return Response::error('The acting MCP principal cannot be attributed.');
         }
         $outcome = resolve(RevokeCredentialAction::class)(
-            $credentialId,
+            $target->id,
             AuditActor::operatorIntegration((string) $identifier),
-            new Subject(SubjectType::Installation, $app),
+            new Subject(SubjectType::Installation, $target->subject_ref),
             CredentialManagementScope::memberInstallation(),
         );
 
@@ -84,13 +85,9 @@ final class RevokeCredential extends WakeTool
         return [(string) $validated['app'], (string) $validated['credential_id']];
     }
 
-    private function target(string $app, string $credentialId): bool
+    private function target(string $app, string $credentialId): ?Credential
     {
-        if (! DB::table('wake_connected_apps')->where('id', $app)->exists()) {
-            return false;
-        }
-
-        return resolve(IngestCredentialTarget::class)->findForRevoke($app, $credentialId) !== null;
+        return resolve(IngestCredentialTarget::class)->findForRevoke($app, $credentialId);
     }
 
     private function missingTarget(): Response

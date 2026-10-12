@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace ArtisanBuild\WakeClient\Logging;
 
-use Illuminate\Contracts\Config\Repository;
 use Illuminate\Log\Logger as IlluminateLogger;
 use Illuminate\Log\LogManager;
 use Monolog\Handler\HandlerInterface;
@@ -15,27 +14,29 @@ final class DefaultChannelAttacher
     private ?bool $monologBacked = null;
 
     public function __construct(
-        private readonly Repository $config,
         private readonly LogManager $logs,
         private readonly WakeHandler $wake,
+        private readonly RecordIdentityRegistry $identities,
     ) {}
 
     public function attach(): void
     {
-        $default = $this->logs->getDefaultDriver();
-        if (is_string($default)) {
-            $this->removeWakeFromStack($default);
-        }
-
         $monolog = $this->defaultMonolog();
         $this->monologBacked = $monolog !== null;
         if ($monolog === null) {
             return;
         }
 
+        $this->appendIdentityProcessor($monolog);
+
+        $handlers = $monolog->getHandlers();
+        if (($handlers[0] ?? null) === $this->wake) {
+            return;
+        }
+
         $handlers = array_values(array_filter(
-            $monolog->getHandlers(),
-            static fn (HandlerInterface $handler): bool => ! $handler instanceof WakeHandler,
+            $handlers,
+            fn (HandlerInterface $handler): bool => $handler !== $this->wake,
         ));
         $monolog->setHandlers($handlers);
         $monolog->pushHandler($this->wake);
@@ -46,50 +47,20 @@ final class DefaultChannelAttacher
         return $this->monologBacked ??= $this->defaultMonolog() !== null;
     }
 
-    /** @param array<string, true> $seen */
-    private function removeWakeFromStack(string $channel, array $seen = []): bool
+    private function appendIdentityProcessor(Logger $monolog): void
     {
-        if (isset($seen[$channel])) {
-            return false;
+        $processors = $monolog->getProcessors();
+        if (in_array($this->identities, $processors, true)) {
+            return;
         }
 
-        $seen[$channel] = true;
-        $key = "logging.channels.{$channel}";
-        $channelConfig = $this->config->get($key);
-        if (! is_array($channelConfig) || ($channelConfig['driver'] ?? null) !== 'stack') {
-            return false;
+        foreach ($processors as $_) {
+            $monolog->popProcessor();
         }
-
-        $channels = $channelConfig['channels'] ?? [];
-        if (is_string($channels)) {
-            $channels = array_map('trim', explode(',', $channels));
+        $monolog->pushProcessor($this->identities);
+        foreach (array_reverse($processors) as $processor) {
+            $monolog->pushProcessor($processor);
         }
-        if (! is_array($channels)) {
-            return false;
-        }
-
-        $changed = false;
-        $filtered = [];
-        foreach ($channels as $stackedChannel) {
-            if ($stackedChannel === 'wake') {
-                $changed = true;
-
-                continue;
-            }
-
-            if (is_string($stackedChannel) && $this->removeWakeFromStack($stackedChannel, $seen)) {
-                $changed = true;
-            }
-            $filtered[] = $stackedChannel;
-        }
-
-        if ($changed) {
-            $channelConfig['channels'] = $filtered;
-            $this->config->set($key, $channelConfig);
-            $this->logs->forgetChannel($channel);
-        }
-
-        return $changed;
     }
 
     private function defaultMonolog(): ?Logger

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace ArtisanBuild\WakeClient\Tests;
 
+use ArtisanBuild\WakeClient\Logging\DefaultChannelAttacher;
+use ArtisanBuild\WakeClient\Logging\RecordIdentityRegistry;
 use ArtisanBuild\WakeClient\Logging\WakeHandler;
 use Illuminate\Contracts\Config\Repository;
 use Illuminate\Foundation\Application;
@@ -11,6 +13,7 @@ use Illuminate\Http\Client\Request;
 use Illuminate\Log\Logger as IlluminateLogger;
 use Illuminate\Log\LogManager;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\ServiceProvider;
 use Monolog\Handler\TestHandler;
 use Monolog\Logger;
 use Orchestra\Testbench\Attributes\DefineEnvironment;
@@ -28,6 +31,9 @@ final class AutoAttachTest extends TestCase
 
         self::assertCount(2, $before);
         self::assertCount(1, $this->handlers($before, WakeHandler::class));
+
+        $this->app->make(DefaultChannelAttacher::class)->attach();
+        self::assertSame($before, $logger->getHandlers());
 
         $logger->info('stack record');
         $this->app->terminate();
@@ -104,6 +110,92 @@ final class AutoAttachTest extends TestCase
 
         self::assertCount(1, $host->getRecords());
         self::assertSame(['non-bubbling record'], $this->wakeMessages());
+        self::assertCount(1, Http::recorded());
+    }
+
+    #[DefineEnvironment('defineWhitespaceWrappedWakeStack')]
+    public function test_it_delivers_once_without_rewriting_an_array_stack_member_with_whitespace(): void
+    {
+        $this->fakeWake();
+        $host = $this->channelHandler('stderr');
+
+        self::assertSame(['stderr', ' wake'], config('logging.channels.stack.channels'));
+        $this->app->make(LogManager::class)->info('whitespace record');
+        $this->app->terminate();
+
+        self::assertSame(['stderr', ' wake'], config('logging.channels.stack.channels'));
+        self::assertCount(1, $host->getRecords());
+        self::assertSame(['whitespace record'], $this->wakeMessages());
+        self::assertCount(1, Http::recorded());
+    }
+
+    #[DefineEnvironment('defineNestedWakeStacks')]
+    public function test_it_preserves_nested_stack_configuration_and_explicit_inner_logging(): void
+    {
+        $this->fakeWake();
+        $host = $this->channelHandler('host');
+
+        self::assertSame(['inner'], config('logging.channels.outer.channels'));
+        self::assertSame(['host', 'wake'], config('logging.channels.inner.channels'));
+
+        $this->app->make(LogManager::class)->info('outer record');
+        $this->app->make(LogManager::class)->channel('inner')->info('inner record');
+        $this->app->terminate();
+
+        self::assertSame(['inner'], config('logging.channels.outer.channels'));
+        self::assertSame(['host', 'wake'], config('logging.channels.inner.channels'));
+        self::assertCount(2, $host->getRecords());
+        self::assertSame(['outer record', 'inner record'], $this->wakeMessages());
+        self::assertCount(1, Http::recorded());
+    }
+
+    #[DefineEnvironment('definePreResolvedDefault')]
+    public function test_it_preserves_a_resolved_default_and_handler_added_by_another_provider(): void
+    {
+        $this->fakeWake();
+        $state = $this->app->make(PreBootLoggerState::class);
+        $active = $this->activeMonolog();
+        $host = $this->channelHandler('stderr');
+
+        self::assertSame($state->logger, $active);
+        self::assertTrue(in_array($state->handler, $active->getHandlers(), true));
+
+        $this->app->make(LogManager::class)->info('pre-resolved record');
+        $this->app->terminate();
+
+        self::assertSame($state->logger, $this->activeMonolog());
+        self::assertTrue(in_array($state->handler, $active->getHandlers(), true));
+        self::assertCount(1, $state->handler->getRecords());
+        self::assertCount(1, $host->getRecords());
+        self::assertSame(['pre-resolved record'], $this->wakeMessages());
+        self::assertCount(1, Http::recorded());
+    }
+
+    #[DefineEnvironment('defineWrappedWakeStack')]
+    public function test_cloned_handler_records_share_one_identity_while_identical_logs_remain_distinct(): void
+    {
+        $this->fakeWake();
+        $top = new TestHandler;
+        $active = $this->activeMonolog();
+        $active->pushHandler($top);
+        $this->app->make(DefaultChannelAttacher::class)->attach();
+        $nested = $this->channelHandler('stderr');
+
+        $this->app->make(LogManager::class)->info('identical record');
+        $this->app->make(LogManager::class)->info('identical record');
+        $this->app->terminate();
+
+        $topRecords = $top->getRecords();
+        $nestedRecords = $nested->getRecords();
+        self::assertCount(2, $topRecords);
+        self::assertCount(2, $nestedRecords);
+        self::assertNotSame($topRecords[0], $nestedRecords[0]);
+        self::assertSame($topRecords[0]->datetime, $nestedRecords[0]->datetime);
+
+        $identities = $this->app->make(RecordIdentityRegistry::class);
+        self::assertSame($identities->identity($topRecords[0]), $identities->identity($nestedRecords[0]));
+        self::assertNotSame($identities->identity($topRecords[0]), $identities->identity($topRecords[1]));
+        self::assertSame(['identical record', 'identical record'], $this->wakeMessages());
         self::assertCount(1, Http::recorded());
     }
 
@@ -185,6 +277,32 @@ final class AutoAttachTest extends TestCase
     {
         $this->configure($app, 'stack', ['host', 'wake'], true, 'https://wake.test', 'synthetic-token');
         $app->make(Repository::class)->set('logging.channels.host.handler_with', ['bubble' => false]);
+    }
+
+    protected function defineWhitespaceWrappedWakeStack(Application $app): void
+    {
+        $this->configure($app, 'stack', ['stderr', ' wake'], true, 'https://wake.test', 'synthetic-token');
+        $app->make(Repository::class)->set('logging.channels.stack.ignore_exceptions', true);
+    }
+
+    protected function defineNestedWakeStacks(Application $app): void
+    {
+        $this->configure($app, 'outer', [], true, 'https://wake.test', 'synthetic-token');
+        $app->make(Repository::class)->set([
+            'logging.channels.outer' => ['driver' => 'stack', 'channels' => ['inner']],
+            'logging.channels.inner' => [
+                'driver' => 'stack',
+                'channels' => ['host', 'wake'],
+                'ignore_exceptions' => true,
+            ],
+        ]);
+    }
+
+    protected function definePreResolvedDefault(Application $app): void
+    {
+        $this->configure($app, 'stack', ['stderr'], true, 'https://wake.test', 'synthetic-token');
+        $app->instance(PreBootLoggerState::class, new PreBootLoggerState);
+        $app->register(ResolveDefaultBeforeBootedProvider::class);
     }
 
     protected function defineNonMonologCustomChannel(Application $app): void
@@ -360,5 +478,32 @@ final class RecordingPsrLogger extends AbstractLogger
     public function messages(): array
     {
         return $this->messages;
+    }
+}
+
+final class PreBootLoggerState
+{
+    public ?Logger $logger = null;
+
+    public readonly TestHandler $handler;
+
+    public function __construct()
+    {
+        $this->handler = new TestHandler;
+    }
+}
+
+final class ResolveDefaultBeforeBootedProvider extends ServiceProvider
+{
+    public function boot(): void
+    {
+        $active = $this->app->make(LogManager::class)->driver();
+        if (! $active instanceof IlluminateLogger || ! $active->getLogger() instanceof Logger) {
+            throw new \LogicException('Test default logger is not Monolog-backed.');
+        }
+
+        $state = $this->app->make(PreBootLoggerState::class);
+        $state->logger = $active->getLogger();
+        $state->logger->pushHandler($state->handler);
     }
 }

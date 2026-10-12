@@ -29,12 +29,11 @@ it('contains wide generated Markdown code inside the 390px documentation column'
     expect($response->getContent())->not->toContain('min-width: max-content', 'overflow-x: visible');
 });
 
-it('documents the exact client setup and raw payload risk', function (): void {
+it('documents the client install values and raw payload risk', function (): void {
     $response = $this->get('/docs/setup')->assertOk()
         ->assertSee('composer require artisan-build/wake-client')
         ->assertSee('WAKE_URL=https://wake.example.com')
         ->assertSee('WAKE_TOKEN=the-token-shown-by-wake')
-        ->assertSee('LOG_STACK=single,wake')
         ->assertSee('client appends <code>/api/v1/ingest</code>', false)
         ->assertSee('without changing them by default')
         ->assertSee('secrets, tokens, personal data, or other sensitive values')

@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Services\DeleteAppLogs;
 use App\Services\WakeQueries;
 use ArtisanBuild\WakeServer\Lake\DuckDb;
 use ArtisanBuild\WakeServer\Lake\FlushLogBatches;
@@ -249,6 +250,58 @@ it('executes Wake query search tail and context through the production DuckDB dr
         ->and(array_column($context['rows'], 'event_id'))->toBe([$older, $target, $newest])
         ->and(array_unique(array_column($context['rows'], 'app_id')))->toBe(['alpha'])
         ->and(array_column($search['rows'], 'event_id'))->not->toContain($other);
+});
+
+it('deletes one app through the production DuckDB driver and converges on retry', function (): void {
+    expect(is_executable(base_path('bin/duckdb')))->toBeTrue('Run scripts/install-duckdb.sh before the root test lane.');
+    $lake = resolve(DuckDb::class);
+    $targetOne = (string) Str::ulid();
+    $targetTwo = (string) Str::ulid();
+    $other = (string) Str::ulid();
+    $row = static fn (string $eventId, string $app, string $at): array => [
+        'event_id' => $eventId, 'app_id' => $app, 'occurred_at' => $at,
+        'level' => 'error', 'channel' => 'app', 'message' => $app.' deletion proof',
+        'context' => [], 'extra' => [], 'exception' => null, 'environment' => 'testing',
+        'hostname' => 'localhost', 'correlation_id' => null,
+    ];
+    $lake->bootstrap();
+    $lake->commitBatch((string) Str::ulid(), [
+        $row($targetOne, 'target', '2026-10-11T12:00:00.000000Z'),
+        $row($targetTwo, 'target', '2026-10-11T12:01:00.000000Z'),
+        $row($other, 'other', '2026-10-11T12:02:00.000000Z'),
+    ]);
+    foreach (['target', 'other'] as $app) {
+        DB::table('wake_connected_apps')->insert(['id' => $app, 'enabled' => true, 'created_at' => now(), 'updated_at' => now()]);
+    }
+    foreach ([[$targetOne, 'target', 2], [$other, 'other', 1]] as [$eventId, $app, $count]) {
+        DB::table('wake_event_locators')->insert(['event_id' => $eventId, 'app_id' => $app, 'event_date' => '2026-10-11', 'occurred_at' => '2026-10-11 12:00:00+00']);
+        DB::table('wake_hourly_counts')->insert(['app_id' => $app, 'environment' => 'testing', 'level' => 'error', 'hour' => '2026-10-11 12:00:00+00', 'count' => $count]);
+        DB::table('wake_error_events')->insert([
+            'event_id' => $eventId, 'app_id' => $app, 'event_date' => '2026-10-11', 'occurred_at' => '2026-10-11 12:00:00+00',
+            'level' => 'error', 'channel' => 'app', 'message' => $app, 'context' => '{}', 'extra' => '{}',
+            'exception' => null, 'environment' => 'testing', 'hostname' => 'localhost', 'correlation_id' => null,
+        ]);
+    }
+    $service = new DeleteAppLogs($lake, resolve(LakeWriterLock::class));
+    $preview = $service->preview('target');
+    $filesBefore = $lake->query("SELECT count(*) AS files FROM ducklake_list_files('lake', 'logs');");
+    $first = $service->run('target');
+    $filesAfter = $lake->query("SELECT count(*) AS files FROM ducklake_list_files('lake', 'logs');");
+    $second = $service->run('target');
+
+    expect($preview)->toMatchArray(['lake_rows' => 2, 'locators' => 1, 'hourly_groups' => 1, 'hourly_events' => 2, 'errors' => 1])
+        ->and($first)->toMatchArray(['lake_rows' => 2, 'locators' => 1, 'hourly_groups' => 1, 'hourly_events' => 2, 'errors' => 1])
+        ->and($second)->toMatchArray(['lake_rows' => 0, 'locators' => 0, 'hourly_groups' => 0, 'hourly_events' => 0, 'errors' => 0])
+        ->and($lake->countAppRows('target'))->toBe(0)
+        ->and($lake->countAppRows('other'))->toBe(1)
+        ->and(DB::table('wake_event_locators')->where('app_id', 'target')->count())->toBe(0)
+        ->and(DB::table('wake_hourly_counts')->where('app_id', 'target')->count())->toBe(0)
+        ->and(DB::table('wake_error_events')->where('app_id', 'target')->count())->toBe(0)
+        ->and(DB::table('wake_event_locators')->where('app_id', 'other')->count())->toBe(1)
+        ->and(DB::table('wake_hourly_counts')->where('app_id', 'other')->value('count'))->toBe(1)
+        ->and(DB::table('wake_error_events')->where('app_id', 'other')->count())->toBe(1)
+        ->and($filesBefore)->not->toBe([])
+        ->and($filesAfter)->not->toBe([]);
 });
 
 /** @return array{string, string} */

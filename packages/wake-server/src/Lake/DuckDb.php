@@ -136,7 +136,7 @@ final class DuckDb implements LakeAppDeletion, LakeMaintenance, LakeReader, Lake
 
     public function expireSnapshots(DateTimeInterface $through): void
     {
-        $timestamp = $this->literal($through->format('Y-m-d H:i:sP'));
+        $timestamp = $this->literal($through->format('Y-m-d H:i:s.uP'));
         $this->query("CALL ducklake_expire_snapshots('lake', older_than => CAST({$timestamp} AS TIMESTAMPTZ));", 300);
     }
 

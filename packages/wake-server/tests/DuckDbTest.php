@@ -267,7 +267,7 @@ set -e
 input="$(cat)"
 case "$input" in
   *"DELETE FROM lake.logs"*) printf '%s' "$input" | grep -q "event_date < CAST('2026-09-11' AS DATE)" ;;
-  *"ducklake_expire_snapshots"*) printf '%s' "$input" | grep -q "older_than => CAST('2026-10-11 15:30:00+00:00' AS TIMESTAMPTZ)" ;;
+  *"ducklake_expire_snapshots"*) printf '%s' "$input" | grep -q "older_than => CAST('2026-10-11 15:30:00.000000+00:00' AS TIMESTAMPTZ)" ;;
   *"ducklake_cleanup_old_files"*) printf '%s' "$input" | grep -q "cleanup_all => true" ;;
   *) exit 1 ;;
 esac

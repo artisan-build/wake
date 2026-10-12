@@ -28,6 +28,7 @@ final class IngestCredentialTarget
             ->whereNull('user_id')
             ->where('status', CredentialStatus::Active)
             ->whereNull('revoked_at')
+            ->whereNull('rotated_at')
             ->where(static function ($query): void {
                 $query->whereNull('expires_at')->orWhere('expires_at', '>', now());
             })

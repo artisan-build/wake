@@ -155,18 +155,18 @@ final class ScaleCorpusLoader
         $end = $offset + $count - 1;
         $sql = <<<'SQL'
             WITH generated AS (
-                SELECT ordinal, substr(md5(? || ':' || ordinal::text), 1, 26) AS event_id,
-                    format('verify-%s-app-%s', ?, lpad(((ordinal % ?) + 1)::text, 2, '0')) AS app_id,
-                    timestamp with time zone '2026-09-12 00:00:00+00' + floor((ordinal::numeric * ?) / ?) * interval '1 second' AS occurred_at,
+                SELECT ordinal, substr(md5(?::text || ':' || ordinal::text), 1, 26) AS event_id,
+                    format('verify-%s-app-%s', ?::text, lpad(((ordinal % ?::bigint) + 1)::text, 2, '0')) AS app_id,
+                    timestamp with time zone '2026-09-12 00:00:00+00' + floor((ordinal::numeric * ?::bigint) / ?::bigint) * interval '1 second' AS occurred_at,
                     CASE WHEN ordinal % 100 = 0 THEN 'error' WHEN ordinal % 31 = 0 THEN 'warning' WHEN ordinal % 7 = 0 THEN 'debug' ELSE 'info' END AS level,
-                    CASE WHEN ordinal = 0 THEN 'WAKE_VERIFICATION_KNOWN_EVENT ' || ? WHEN ordinal % 100 = 0 THEN 'Checkout failed [E500] request-' || ordinal::text ELSE 'Synthetic request completed request-' || ordinal::text END AS message,
+                    CASE WHEN ordinal = 0 THEN 'WAKE_VERIFICATION_KNOWN_EVENT ' || ?::text WHEN ordinal % 100 = 0 THEN 'Checkout failed [E500] request-' || ordinal::text ELSE 'Synthetic request completed request-' || ordinal::text END AS message,
                     jsonb_build_object('request_id', 'request-' || ordinal::text, 'duration_ms', 10 + (ordinal % 1200), 'route', CASE WHEN ordinal % 3 = 0 THEN '/checkout' ELSE '/dashboard' END) AS context,
-                    jsonb_build_object('generator', 'wake:verification-load', 'run_key', ?) AS extra,
+                    jsonb_build_object('generator', 'wake:verification-load', 'run_key', ?::text) AS extra,
                     CASE WHEN ordinal % 100 = 0 THEN jsonb_build_object('class', 'SyntheticVerificationException', 'message', 'Synthetic failure') END AS exception,
                     CASE ordinal % 3 WHEN 0 THEN 'production' WHEN 1 THEN 'staging' ELSE 'development' END AS environment,
-                    format('verify-%s-host-%s', ?, lpad(((ordinal % 8) + 1)::text, 2, '0')) AS hostname,
-                    'verify-' || ? || '-request-' || floor(ordinal / 5)::text AS correlation_id
-                FROM generate_series(?, ?) AS rows(ordinal)
+                    format('verify-%s-host-%s', ?::text, lpad(((ordinal % 8) + 1)::text, 2, '0')) AS hostname,
+                    'verify-' || ?::text || '-request-' || floor(ordinal / 5)::text AS correlation_id
+                FROM generate_series(?::bigint, ?::bigint) AS rows(ordinal)
             )
             SQL;
 

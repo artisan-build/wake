@@ -63,7 +63,10 @@ it('documents retention ordering and the exact cost basis', function (): void {
         ->assertSee('whole-UTC-day cutoff')
         ->assertSee('about 56 MB per 1 million log lines')
         ->assertSee('minute flush keeps PostgreSQL awake')
-        ->assertSee('about $25 per month');
+        ->assertSee('about $25 per month')
+        ->assertSee('measured 35-second daily rewrite')
+        ->assertSee('2 GiB Flex managed queue adds about $0.14 per month')
+        ->assertSee('before object-storage request charges');
 
     expect(strpos($content, 'prunes the corresponding locator'))
         ->toBeLessThan(strpos($content, 'expires superseded DuckLake snapshots'))

@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace ArtisanBuild\WakeServer\Lake;
 
+use DateTimeImmutable;
 use DateTimeInterface;
+use DateTimeZone;
 use RuntimeException;
 use SensitiveParameter;
 use Symfony\Component\Process\Process;
@@ -92,21 +94,21 @@ final class DuckDb implements LakeAppDeletion, LakeMaintenance, LakeReader, Lake
 
     public function compact(): array
     {
+        $maintenanceAt = new DateTimeImmutable('now', new DateTimeZone('UTC'));
+        $tempDirectory = $this->compactionTempDirectory();
         $before = $this->query("SELECT count(*) AS files FROM ducklake_list_files('lake', 'logs');", 300);
         $filesBefore = $this->integer($before[0]['files'] ?? 0);
-        $filesAfter = $filesBefore;
+        $candidates = $this->query('SELECT CAST(event_date AS VARCHAR) AS event_date, count(DISTINCT filename) AS files FROM lake.logs GROUP BY event_date HAVING count(DISTINCT filename) > 1 ORDER BY event_date ASC LIMIT 3;', 300);
 
-        for ($output = 0; $output < 3; $output++) {
-            $after = $this->query("SET memory_limit='240MB'; CALL lake.set_option('target_file_size', '8MB', table_name => 'logs'); CALL ducklake_merge_adjacent_files('lake', 'logs', max_compacted_files => 1); CALL lake.set_option('target_file_size', '32MB', table_name => 'logs'); SELECT count(*) AS files FROM ducklake_list_files('lake', 'logs');", 300);
-            $lastAfter = $after === [] ? [] : $after[count($after) - 1];
-            $next = $this->integer($lastAfter['files'] ?? 0);
-            if ($next >= $filesAfter) {
-                break;
-            }
-            $filesAfter = $next;
+        foreach ($candidates as $candidate) {
+            $this->rewriteDay($this->rowString($candidate, 'event_date'), $tempDirectory);
         }
+        if ($candidates !== []) {
+            $this->expireSnapshots($maintenanceAt);
+        }
+        $after = $this->query("SELECT count(*) AS files FROM ducklake_list_files('lake', 'logs');", 300);
 
-        return ['files_before' => $filesBefore, 'files_after' => $filesAfter];
+        return ['files_before' => $filesBefore, 'files_after' => $this->integer($after[0]['files'] ?? 0)];
     }
 
     public function deleteBefore(DateTimeInterface $cutoff): int
@@ -304,6 +306,40 @@ final class DuckDb implements LakeAppDeletion, LakeMaintenance, LakeReader, Lake
         $error = preg_replace('/\b(KEY_ID|SECRET)\s+\'[^\']*\'/i', '$1 \'[REDACTED]\'', $error) ?? $error;
 
         return mb_substr(trim($error), 0, 1200);
+    }
+
+    private function compactionTempDirectory(): string
+    {
+        $directory = storage_path('app/duckdb/compaction');
+        if (! is_dir($directory) && ! mkdir($directory, 0755, true) && ! is_dir($directory)) {
+            throw new RuntimeException('The DuckDB compaction temporary directory could not be created.');
+        }
+        if (! is_writable($directory)) {
+            throw new RuntimeException('The DuckDB compaction temporary directory is not writable.');
+        }
+
+        return $directory;
+    }
+
+    private function rewriteDay(string $day, string $tempDirectory): void
+    {
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/D', $day) !== 1) {
+            throw new RuntimeException('DuckLake returned an invalid compaction day.');
+        }
+        $date = $this->literal($day);
+        $temp = $this->literal($tempDirectory);
+        $this->query(<<<SQL
+            SET temp_directory={$temp};
+            CALL lake.set_option('target_file_size', '32MB', table_name => 'logs');
+            CREATE TEMP TABLE wake_compaction_day AS
+                SELECT * FROM lake.logs
+                WHERE event_date = CAST({$date} AS DATE)
+                ORDER BY app_id, occurred_at;
+            BEGIN TRANSACTION;
+            DELETE FROM lake.logs WHERE event_date = CAST({$date} AS DATE);
+            INSERT INTO lake.logs SELECT * FROM wake_compaction_day ORDER BY app_id, occurred_at;
+            COMMIT;
+            SQL, 900);
     }
 
     private function configString(string $key): string

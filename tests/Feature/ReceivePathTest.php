@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Services\WakeQueries;
 use ArtisanBuild\BuiltForCloud\Credential;
 use ArtisanBuild\BuiltForCloud\CredentialKind;
 use ArtisanBuild\BuiltForCloud\CredentialPurpose;
@@ -218,6 +219,40 @@ it('returns 403 for valid credentials with disallowed purpose ownership subject 
     }
 
     expect(StagingBatch::query()->count())->toBe(0);
+});
+
+it('reports disabled and unmapped credential rejections through ingest health', function (): void {
+    $disabled = wakeConnectedApp('disabled-health', ['enabled' => false]);
+    wakeCredential($disabled->id, 'disabled-health-secret');
+
+    wakePost($this, 'disabled-health-secret', 'disabled-health-key', wakeEnvelope('disabled-health-key'))
+        ->assertForbidden()
+        ->assertJsonPath('error', 'forbidden');
+
+    $subjectRef = 'Unmapped App (production) [env-orphan]';
+    $secret = 'unmapped-health-secret';
+    $credential = wakeCredential($subjectRef, $secret, ['purpose' => CredentialPurpose::Mcp]);
+    $credential->forceFill(['purpose' => CredentialPurpose::Consumption])->save();
+
+    wakePost($this, $secret, 'unmapped-health-key', wakeEnvelope('unmapped-health-key'))
+        ->assertForbidden()
+        ->assertJsonPath('error', 'forbidden');
+
+    $disabledHealth = resolve(WakeQueries::class)->ingestHealth(['app' => $disabled->id]);
+    $unmappedHealth = collect(resolve(WakeQueries::class)->ingestHealth(['all_apps' => true])['rows'])
+        ->firstWhere('subject_ref', $subjectRef);
+    $durableRows = DB::table('wake_unmapped_ingest_rejections')->get()
+        ->map(fn (object $row): string => json_encode($row, JSON_THROW_ON_ERROR));
+
+    expect($disabledHealth['rows'][0]['mapping_status'])->toBe('mapped')
+        ->and($disabledHealth['rows'][0]['rejected_batches'])->toBe(1)
+        ->and($unmappedHealth)->toBeArray()
+        ->and($unmappedHealth['id'])->toBeNull()
+        ->and($unmappedHealth['mapping_status'])->toBe('missing')
+        ->and($unmappedHealth['rejected_batches'])->toBe(1)
+        ->and($unmappedHealth['last_seen_at'])->not->toBeNull()
+        ->and($durableRows->contains(fn (string $row): bool => str_contains($row, $secret)))->toBeFalse()
+        ->and(StagingBatch::query()->count())->toBe(0);
 });
 
 it('rejects forged app fields and only stages rows for the credential app', function (): void {

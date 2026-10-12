@@ -144,16 +144,52 @@ final readonly class WakeQueries
      */
     public function ingestHealth(array $scope): array
     {
-        [$app] = $this->scope($scope);
+        [$app, $allApps] = $this->scope($scope);
         $rows = DB::table('wake_connected_apps')->when($app !== null, fn (Builder $query) => $query->where('id', $app))->orderBy('id')->limit(self::MAX_ROWS)->get();
 
-        return ['rows' => array_map(function (object $row): array {
+        $health = array_map(function (object $row): array {
             $data = (array) $row;
+            $data['mapping_status'] = 'mapped';
             $data['pending_batches'] = DB::table('wake_staging_batches')->where('app_id', $data['id'])->whereIn('status', ['pending', 'flushing'])->count();
             $data['lag_seconds'] = self::lagSeconds($data['last_seen_at'], $data['last_flushed_at']);
 
             return $data;
-        }, $rows->all())];
+        }, $rows->all());
+
+        if ($allApps) {
+            $unmapped = DB::table('wake_unmapped_ingest_rejections')
+                ->latest('last_seen_at')
+                ->limit(self::MAX_ROWS)
+                ->get();
+
+            $unmappedHealth = array_map(static function (object $row): array {
+                $data = (array) $row;
+
+                return [
+                    'id' => null,
+                    'subject_ref' => $data['subject_ref'],
+                    'name' => null,
+                    'enabled' => false,
+                    'accepted_rows' => 0,
+                    'dropped_rows' => 0,
+                    'rejected_batches' => $data['rejected_batches'],
+                    'rate_limit_hits' => 0,
+                    'flushed_rows' => 0,
+                    'last_seen_at' => $data['last_seen_at'],
+                    'last_flushed_at' => null,
+                    'last_client_version' => null,
+                    'created_at' => $data['created_at'],
+                    'updated_at' => $data['updated_at'],
+                    'mapping_status' => 'missing',
+                    'pending_batches' => 0,
+                    'lag_seconds' => null,
+                ];
+            }, $unmapped->all());
+
+            $health = array_slice([...$unmappedHealth, ...$health], 0, self::MAX_ROWS);
+        }
+
+        return ['rows' => $health];
     }
 
     public static function lagSeconds(mixed $lastSeenAt, mixed $lastFlushedAt): ?float

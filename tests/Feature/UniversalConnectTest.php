@@ -55,7 +55,7 @@ function universalConnectEnvelope(string $key): array
 
 it('provisions an app through the real credential endpoint and ingests without a manual app step', function (): void {
     $operator = universalConnectOperator();
-    $subjectRef = 'App Name (production) [env-a2f52d4e-a4e6-4a6a-96b4-a04ac506e881]';
+    $subjectRef = 'Acme Billing Service (production) [env-a2f52d4e-a4e6-4a6a-96b4-a04ac506e881]';
 
     $minted = $this->postJson('/bfc/credentials', [
         'subject_type' => SubjectType::Installation->value,
@@ -73,6 +73,8 @@ it('provisions an app through the real credential endpoint and ingests without a
         ->and($credential->subject_ref)->toBe($subjectRef)
         ->and($app->id)->toMatch('/^app-[0-7][0-9a-hjkmnp-tv-z]{25}$/')
         ->and($app->id)->not->toBe($subjectRef)
+        ->and(Str::length((string) $app->name))->toBeLessThanOrEqual(100)
+        ->and($app->name)->toEndWith(" [{$app->id}]")
         ->and(resolve(ConnectedAppCredentials::class)->current($app->id)?->is($credential))->toBeTrue()
         ->and(resolve(IngestCredentialTarget::class)->findForRotate($app->id, $credential->id)?->is($credential))->toBeTrue()
         ->and($beforeIngest['rows'])->toHaveCount(1)

@@ -57,6 +57,6 @@ final readonly class ProvisionConnectedApp
     {
         $suffix = " [{$id}]";
 
-        return Str::limit($subjectRef, 100 - Str::length($suffix)).$suffix;
+        return Str::substr($subjectRef, 0, 100 - Str::length($suffix)).$suffix;
     }
 }

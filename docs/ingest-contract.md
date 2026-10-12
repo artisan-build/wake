@@ -24,7 +24,9 @@ server does not trust.
 Minting an installation-owned Wake ingest credential also creates its connected-app record. Both writes use the same
 database transaction, so a credential is not issued when the app record cannot be stored. Wake keeps the credential's
 `subject_ref` as an external label and assigns its own app ID. Staging rows, health queries, and lake rows use that Wake
-ID. An app created through the Wake admin keeps the supplied slug as its ID and credential label.
+ID. Provisioning happens at mint so a successful credential response guarantees the app mapping exists before the
+client can send its first batch. An app created through the Wake admin keeps the supplied slug as its ID and credential
+label.
 
 The `Idempotency-Key` header and body `idempotency_key` MUST match exactly. The key is 1–128 bytes and contains only
 ASCII letters, digits, `.`, `_`, `:`, or `-`.

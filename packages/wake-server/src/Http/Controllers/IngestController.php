@@ -45,7 +45,15 @@ final class IngestController
         /** @var ConnectedApp|null $app */
         $app = ConnectedApp::query()->where('subject_ref', $credential->subject_ref)->first();
 
-        if ($app === null || ! $app->enabled) {
+        if ($app === null) {
+            $this->ingest->recordUnmappedRejection($credential->subject_ref);
+
+            return $this->error(403, ErrorCode::Forbidden, 'Credential is not allowed to ingest.');
+        }
+
+        if (! $app->enabled) {
+            $this->ingest->recordRejection($app->id);
+
             return $this->error(403, ErrorCode::Forbidden, 'Credential is not allowed to ingest.');
         }
 

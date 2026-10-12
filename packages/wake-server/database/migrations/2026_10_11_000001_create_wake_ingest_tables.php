@@ -29,6 +29,13 @@ return new class extends Migration
             $table->timestampsTz(6);
         });
 
+        Schema::create('wake_unmapped_ingest_rejections', function (Blueprint $table): void {
+            $table->string('subject_ref')->primary();
+            $table->unsignedBigInteger('rejected_batches')->default(0);
+            $table->timestampTz('last_seen_at', 6);
+            $table->timestampsTz(6);
+        });
+
         Schema::create('wake_staging_batches', function (Blueprint $table): void {
             $table->char('batch_id', 26)->primary();
             $table->string('app_id');
@@ -74,6 +81,7 @@ return new class extends Migration
     {
         Schema::dropIfExists('wake_ingest_windows');
         Schema::dropIfExists('wake_staging_batches');
+        Schema::dropIfExists('wake_unmapped_ingest_rejections');
         Schema::dropIfExists('wake_connected_apps');
     }
 };

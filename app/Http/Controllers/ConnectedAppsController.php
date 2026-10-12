@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers;
 
 use App\Services\ConnectedAppCredentials;
+use App\Services\ConnectedAppHealth;
 use ArtisanBuild\BuiltForCloud\AuditActor;
 use ArtisanBuild\BuiltForCloud\RevokeOutcome;
 use ArtisanBuild\BuiltForCloud\User;
@@ -26,7 +27,7 @@ final class ConnectedAppsController extends Controller
             : view('apps.index', ['apps' => $apps]);
     }
 
-    public function show(Request $request, ConnectedApp $app, ConnectedAppCredentials $credentials): JsonResponse|View
+    public function show(Request $request, ConnectedApp $app, ConnectedAppCredentials $credentials, ConnectedAppHealth $health): JsonResponse|View
     {
         $credential = $credentials->current($app->id);
 
@@ -38,6 +39,7 @@ final class ConnectedAppsController extends Controller
             : view('apps.show', [
                 'app' => $app,
                 'credential' => $credential,
+                'health' => $health->for($app),
                 'wakeUrl' => url('/'),
             ]);
     }

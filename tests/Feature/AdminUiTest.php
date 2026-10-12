@@ -114,3 +114,73 @@ it('shows browser validation errors and keeps admin routes on the human session 
     $paths = collect(Route::getRoutes())->map->uri()->all();
     expect($paths)->not->toContain('logs', 'logs/search', 'search');
 });
+
+it('shows honest derived PostgreSQL health and escapes hostile metadata', function (): void {
+    $this->post('/apps', ['id' => 'hostile-app', 'name' => 'Hostile App'])->assertCreated();
+    $lastSeen = now()->startOfSecond();
+    DB::table('wake_connected_apps')->where('id', 'hostile-app')->update([
+        'accepted_rows' => 1250,
+        'flushed_rows' => 1200,
+        'rejected_batches' => 3,
+        'rate_limit_hits' => 4,
+        'dropped_rows' => 5,
+        'last_seen_at' => $lastSeen,
+        'last_flushed_at' => $lastSeen->copy()->subSeconds(90),
+        'last_client_version' => '<img src=x onerror=alert(1)>',
+    ]);
+    DB::table('wake_hourly_counts')->insert([
+        'app_id' => 'hostile-app',
+        'environment' => '<script>alert(1)</script>',
+        'level' => 'info',
+        'hour' => $lastSeen->copy()->startOfHour(),
+        'count' => 1250,
+    ]);
+    $queries = [];
+    DB::listen(static function ($query) use (&$queries): void {
+        $queries[] = $query->sql;
+    });
+
+    $response = $this->get('/apps/hostile-app')->assertOk()
+        ->assertSee('Ingest is lagging behind the latest accepted batch.')
+        ->assertSee('1,250')
+        ->assertSee('1,200')
+        ->assertSee('90 seconds')
+        ->assertSee('&lt;script&gt;alert(1)&lt;/script&gt;', false)
+        ->assertSee('&lt;img src=x onerror=alert(1)&gt;', false)
+        ->assertDontSee('<script>alert(1)</script>', false)
+        ->assertDontSee('<img src=x onerror=alert(1)>', false);
+
+    expect($response->getContent())->not->toContain('Log viewer', 'Search logs', '<canvas')
+        ->and(implode(' ', $queries))->not->toContain('wake_error_events', 'lake.logs');
+});
+
+it('reports never-seen pending and caught-up health without inventing data', function (): void {
+    $this->post('/apps', ['id' => 'empty-app', 'name' => 'Empty App'])->assertCreated();
+    $this->get('/apps/empty-app')->assertOk()
+        ->assertSee('Wake has not received a batch from this app.')
+        ->assertSee('Never')
+        ->assertSee('None reported')
+        ->assertSee('Not available')
+        ->assertSee('Not reported');
+
+    $seen = now()->startOfSecond();
+    DB::table('wake_connected_apps')->where('id', 'empty-app')->update(['last_seen_at' => $seen]);
+    $this->get('/apps/empty-app')->assertOk()->assertSee('Wake has received data, but no flush has completed yet.');
+
+    DB::table('wake_connected_apps')->where('id', 'empty-app')->update(['last_flushed_at' => $seen]);
+    $this->get('/apps/empty-app')->assertOk()->assertSee('Ingest is caught up with the latest accepted batch.');
+});
+
+it('serves a public landing page that routes people to the admin without viewer claims', function (): void {
+    $this->post('/bfc/logout')->assertRedirect('/bfc/login');
+
+    $response = $this->get('/')->assertOk()
+        ->assertSee('Logs for your agents')
+        ->assertSee('self-hosted log sink')
+        ->assertSee('Logs are sent as written')
+        ->assertSee('href="http://localhost/apps"', false)
+        ->assertSee('data-testid="landing-admin"', false);
+
+    expect($response->getContent())->not->toContain('Log viewer', 'Search logs', '<canvas', 'Charts', 'Alerts');
+    $this->get('/apps')->assertRedirect('/bfc/login');
+});

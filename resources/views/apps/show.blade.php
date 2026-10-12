@@ -22,6 +22,33 @@
         @endif
     </section>
 
+    <section data-testid="app-health" class="bfc-panel" aria-labelledby="app-health-title">
+        <h2 id="app-health-title">Ingest health</h2>
+        <p class="bfc-status mt-4">
+            @if ($health['state'] === 'never_seen')
+                Wake has not received a batch from this app.
+            @elseif ($health['state'] === 'pending')
+                Wake has received data, but no flush has completed yet.
+            @elseif ($health['state'] === 'lagging')
+                Ingest is lagging behind the latest accepted batch.
+            @else
+                Ingest is caught up with the latest accepted batch.
+            @endif
+        </p>
+        <dl class="grid gap-2 mt-4 sm:grid-cols-2">
+            <div><dt>Last seen</dt><dd>{{ $health['last_seen_at']?->toIso8601String() ?? 'Never' }}</dd></div>
+            <div><dt>Environments</dt><dd>{{ $health['environments'] === [] ? 'None reported' : implode(', ', $health['environments']) }}</dd></div>
+            <div><dt>Accepted rows</dt><dd>{{ number_format($health['accepted_rows']) }}</dd></div>
+            <div><dt>Flushed rows</dt><dd>{{ number_format($health['flushed_rows']) }}</dd></div>
+            <div><dt>Rejected batches</dt><dd>{{ number_format($health['rejected_batches']) }}</dd></div>
+            <div><dt>Rate-limit hits</dt><dd>{{ number_format($health['rate_limit_hits']) }}</dd></div>
+            <div><dt>Client-reported drops</dt><dd>{{ number_format($health['dropped_rows']) }}</dd></div>
+            <div><dt>Pending batches</dt><dd>{{ number_format($health['pending_batches']) }}</dd></div>
+            <div><dt>Flush lag</dt><dd>{{ $health['lag_seconds'] === null ? 'Not available' : $health['lag_seconds'].' seconds' }}</dd></div>
+            <div><dt>Client version</dt><dd>{{ $health['last_client_version'] ?? 'Not reported' }}</dd></div>
+        </dl>
+    </section>
+
     <section data-testid="app-setup" class="bfc-panel" aria-labelledby="app-setup-title">
         <h2 id="app-setup-title">Setup</h2>
         <p class="mt-4">Use the Wake installation URL. The client adds <code>/api/v1/ingest</code> when it sends a batch.</p>

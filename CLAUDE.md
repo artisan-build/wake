@@ -38,11 +38,11 @@ Before the first deploy, replace every placeholder in the `manifest` block of
 | `name` | The product's display name as Scalpels lists it. |
 | `slug` | The product's lower-kebab-case Scalpels catalog slug. |
 | `description` | One sentence saying what the product does, as on its Scalpels product page. |
-| `icon` | `https://scalpels.app/img/products/transparent/{slug}.png` |
+| `icon` | `https://scalpels.app/img/products/transparent/{slug}.svg` |
 | `product_url` | `https://scalpels.app/products/{slug}` |
 
 The `slug` must exactly match the product's Scalpels catalog slug; its artwork loads from
-`https://scalpels.app/img/products/transparent/{slug}.png`.
+`https://scalpels.app/img/products/transparent/{slug}.svg`.
 
 Laravel Cloud provisions resource configuration. Do not commit secrets, app IDs, personal config,
 machine-specific paths, or hand-written values that shadow Cloud-managed resource variables.

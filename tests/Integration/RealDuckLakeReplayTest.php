@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Services\DeleteAppLogs;
 use App\Services\WakeQueries;
+use ArtisanBuild\WakeServer\Jobs\RewriteLakeDay;
 use ArtisanBuild\WakeServer\Lake\DuckDb;
 use ArtisanBuild\WakeServer\Lake\FlushLogBatches;
 use ArtisanBuild\WakeServer\Lake\LakeWriterLock;
@@ -60,7 +61,7 @@ it('bootstraps real DuckLake on PostgreSQL and replays one batch without duplica
     expect($result[0]['rows'] ?? null)->toBe(1);
 });
 
-it('rewrites only the oldest three fragmented UTC days through the real DuckLake service', function (): void {
+it('rewrites one named fragmented day through the queued job and real writer lock', function (): void {
     expect(is_executable(base_path('bin/duckdb')))->toBeTrue('Run scripts/install-duckdb.sh before the root test lane.');
     $lake = resolve(DuckDb::class);
     $days = ['2026-10-01', '2026-10-02', '2026-10-03', '2026-10-04'];
@@ -83,8 +84,9 @@ it('rewrites only the oldest three fragmented UTC days through the real DuckLake
     $rowsBefore = $lake->query('SELECT event_id, app_id, CAST(event_date AS VARCHAR) AS event_date, CAST(occurred_at AS VARCHAR) AS occurred_at FROM lake.logs ORDER BY event_id;');
     $daysBefore = realLakeFilesAndRowsByDay($lake);
     $snapshotBefore = $lake->query("SELECT max(snapshot_id) AS snapshot_id FROM ducklake_snapshots('lake');");
+    $candidates = $lake->fragmentedDays(3);
 
-    $result = $lake->compact();
+    (new RewriteLakeDay($candidates[0]))->handle($lake, resolve(LakeWriterLock::class));
 
     $rowsAfter = $lake->query('SELECT event_id, app_id, CAST(event_date AS VARCHAR) AS event_date, CAST(occurred_at AS VARCHAR) AS occurred_at FROM lake.logs ORDER BY event_id;');
     $daysAfter = realLakeFilesAndRowsByDay($lake);
@@ -95,11 +97,11 @@ it('rewrites only the oldest three fragmented UTC days through the real DuckLake
         ['event_date' => '2026-10-02', 'files' => 2, 'rows' => 2],
         ['event_date' => '2026-10-03', 'files' => 2, 'rows' => 2],
         ['event_date' => '2026-10-04', 'files' => 2, 'rows' => 2],
-    ])->and($result)->toBe(['files_before' => 8, 'files_after' => 5])
+    ])->and($candidates)->toBe(['2026-10-01', '2026-10-02', '2026-10-03'])
         ->and($daysAfter)->toBe([
             ['event_date' => '2026-10-01', 'files' => 1, 'rows' => 2],
-            ['event_date' => '2026-10-02', 'files' => 1, 'rows' => 2],
-            ['event_date' => '2026-10-03', 'files' => 1, 'rows' => 2],
+            ['event_date' => '2026-10-02', 'files' => 2, 'rows' => 2],
+            ['event_date' => '2026-10-03', 'files' => 2, 'rows' => 2],
             ['event_date' => '2026-10-04', 'files' => 2, 'rows' => 2],
         ])->and($rowsAfter)->toBe($rowsBefore)
         ->and((int) ($snapshotAfter[0]['snapshot_id'] ?? 0))->toBeGreaterThan((int) ($snapshotBefore[0]['snapshot_id'] ?? 0));

@@ -93,10 +93,20 @@ final class DuckDb implements LakeAppDeletion, LakeMaintenance, LakeReader, Lake
     public function compact(): array
     {
         $before = $this->query("SELECT count(*) AS files FROM ducklake_list_files('lake', 'logs');", 300);
-        $after = $this->query("CALL ducklake_merge_adjacent_files('lake', 'logs', max_compacted_files => 3); SELECT count(*) AS files FROM ducklake_list_files('lake', 'logs');", 300);
-        $lastAfter = $after === [] ? [] : $after[count($after) - 1];
+        $filesBefore = $this->integer($before[0]['files'] ?? 0);
+        $filesAfter = $filesBefore;
 
-        return ['files_before' => $this->integer($before[0]['files'] ?? 0), 'files_after' => $this->integer($lastAfter['files'] ?? 0)];
+        for ($output = 0; $output < 3; $output++) {
+            $after = $this->query("SET memory_limit='240MB'; CALL lake.set_option('target_file_size', '8MB', table_name => 'logs'); CALL ducklake_merge_adjacent_files('lake', 'logs', max_compacted_files => 1); CALL lake.set_option('target_file_size', '32MB', table_name => 'logs'); SELECT count(*) AS files FROM ducklake_list_files('lake', 'logs');", 300);
+            $lastAfter = $after === [] ? [] : $after[count($after) - 1];
+            $next = $this->integer($lastAfter['files'] ?? 0);
+            if ($next >= $filesAfter) {
+                break;
+            }
+            $filesAfter = $next;
+        }
+
+        return ['files_before' => $filesBefore, 'files_after' => $filesAfter];
     }
 
     public function deleteBefore(DateTimeInterface $cutoff): int

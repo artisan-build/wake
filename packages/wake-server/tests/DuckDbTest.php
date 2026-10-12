@@ -118,23 +118,79 @@ it('rejects an insertion chunk above the hard bound', function (): void {
         ->toThrow(RuntimeException::class, 'cannot exceed 100000');
 });
 
-it('caps adjacent-file compaction at three outputs', function (): void {
-    file_put_contents($this->binary, <<<'SH'
+it('compacts at most three outputs in separate memory-bounded processes', function (): void {
+    $state = $this->binary.'.state';
+    $script = str_replace('__STATE__', escapeshellarg($state), <<<'SH'
 #!/bin/sh
 set -e
+state=__STATE__
+call=0
+if [ -f "$state" ]; then call=$(cat "$state"); fi
+call=$((call + 1))
+printf '%s' "$call" > "$state"
 input="$(cat)"
-case "$input" in
-  *"ducklake_merge_adjacent_files"*)
-    printf '%s' "$input" | grep -q 'max_compacted_files => 3'
-    files=3
+case "$call" in
+  1)
+    printf '%s' "$input" | grep -q "memory_limit='384MB'"
+    if printf '%s' "$input" | grep -q "memory_limit='240MB'"; then exit 1; fi
+    if printf '%s' "$input" | grep -q "target_file_size', '8MB'"; then exit 1; fi
+    files=10
     ;;
-  *"ducklake_list_files"*) files=4 ;;
+  2|3|4)
+    printf '%s' "$input" | grep -q "memory_limit='240MB'"
+    printf '%s' "$input" | grep -q "target_file_size', '8MB'"
+    printf '%s' "$input" | grep -q "target_file_size', '32MB'"
+    printf '%s' "$input" | grep -q 'max_compacted_files => 1'
+    if printf '%s' "$input" | grep -q 'max_compacted_files => 3'; then exit 1; fi
+    files=$((12 - (call * 2)))
+    ;;
   *) exit 1 ;;
 esac
 printf '%s\n' '{"marker":"__WAKE_RESULT_START__"}' "{\"files\":$files}" '{"marker":"__WAKE_RESULT_END__"}'
 SH);
+    file_put_contents($this->binary, $script);
 
-    expect((new DuckDb)->compact())->toBe(['files_before' => 4, 'files_after' => 3]);
+    try {
+        expect((new DuckDb)->compact())->toBe(['files_before' => 10, 'files_after' => 4])
+            ->and((int) file_get_contents($state))->toBe(4);
+    } finally {
+        @unlink($state);
+    }
+});
+
+it('stops sequential compaction when one process creates no output', function (): void {
+    $state = $this->binary.'.state';
+    $script = str_replace('__STATE__', escapeshellarg($state), <<<'SH'
+#!/bin/sh
+set -e
+state=__STATE__
+call=0
+if [ -f "$state" ]; then call=$(cat "$state"); fi
+call=$((call + 1))
+printf '%s' "$call" > "$state"
+input="$(cat)"
+case "$call" in
+  1) files=4 ;;
+  2)
+    printf '%s' "$input" | grep -q 'max_compacted_files => 1'
+    files=3
+    ;;
+  3)
+    printf '%s' "$input" | grep -q 'max_compacted_files => 1'
+    files=3
+    ;;
+  *) exit 1 ;;
+esac
+printf '%s\n' '{"marker":"__WAKE_RESULT_START__"}' "{\"files\":$files}" '{"marker":"__WAKE_RESULT_END__"}'
+SH);
+    file_put_contents($this->binary, $script);
+
+    try {
+        expect((new DuckDb)->compact())->toBe(['files_before' => 4, 'files_after' => 3])
+            ->and((int) file_get_contents($state))->toBe(3);
+    } finally {
+        @unlink($state);
+    }
 });
 
 it('uses the data cutoff for deletion then expires snapshots through maintenance and forces cleanup', function (): void {

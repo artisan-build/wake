@@ -9,6 +9,7 @@ use ArtisanBuild\BuiltForCloud\AuditActor;
 use ArtisanBuild\BuiltForCloud\RevokeOutcome;
 use ArtisanBuild\BuiltForCloud\User;
 use ArtisanBuild\WakeServer\Models\ConnectedApp;
+use Illuminate\Contracts\View\View;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -16,22 +17,32 @@ use Symfony\Component\HttpFoundation\Response;
 
 final class ConnectedAppsController extends Controller
 {
-    public function index(): JsonResponse
+    public function index(Request $request): JsonResponse|View
     {
-        return response()->json([
-            'apps' => ConnectedApp::query()->orderBy('name')->get(['id', 'name', 'enabled']),
-        ]);
+        $apps = ConnectedApp::query()->orderBy('name')->get(['id', 'name', 'enabled']);
+
+        return $request->expectsJson()
+            ? response()->json(['apps' => $apps])
+            : view('apps.index', ['apps' => $apps]);
     }
 
-    public function show(ConnectedApp $app, ConnectedAppCredentials $credentials): JsonResponse
+    public function show(Request $request, ConnectedApp $app, ConnectedAppCredentials $credentials): JsonResponse|View
     {
-        return response()->json([
-            'app' => $app->only(['id', 'name', 'enabled']),
-            'credential_id' => $credentials->current($app->id)?->id,
-        ]);
+        $credential = $credentials->current($app->id);
+
+        return $request->expectsJson()
+            ? response()->json([
+                'app' => $app->only(['id', 'name', 'enabled']),
+                'credential_id' => $credential?->id,
+            ])
+            : view('apps.show', [
+                'app' => $app,
+                'credential' => $credential,
+                'wakeUrl' => url('/'),
+            ]);
     }
 
-    public function store(Request $request, ConnectedAppCredentials $credentials): JsonResponse
+    public function store(Request $request, ConnectedAppCredentials $credentials): Response
     {
         /** @var array{id: string, name: string} $validated */
         $validated = $request->validate([
@@ -42,14 +53,24 @@ final class ConnectedAppsController extends Controller
         $created = $credentials->create($validated['id'], trim($validated['name']), $this->actor($request));
         $secret = $created['credential']->secret?->reveal();
 
-        return response()->json([
-            'app' => $created['app']->only(['id', 'name', 'enabled']),
-            'credential_id' => $created['credential']->summary->id,
+        if ($request->expectsJson()) {
+            return response()->json([
+                'app' => $created['app']->only(['id', 'name', 'enabled']),
+                'credential_id' => $created['credential']->summary->id,
+                'secret' => $secret,
+            ], 201)->header('Cache-Control', 'no-store');
+        }
+
+        return response()->view('apps.secret', [
+            'app' => $created['app'],
+            'credentialId' => $created['credential']->summary->id,
             'secret' => $secret,
+            'wakeUrl' => url('/'),
+            'rotated' => false,
         ], 201)->header('Cache-Control', 'no-store');
     }
 
-    public function rotate(Request $request, ConnectedApp $app, ConnectedAppCredentials $credentials): JsonResponse
+    public function rotate(Request $request, ConnectedApp $app, ConnectedAppCredentials $credentials): Response
     {
         $credential = $credentials->current($app->id);
         abort_if($credential === null, 404);
@@ -57,9 +78,21 @@ final class ConnectedAppsController extends Controller
         $rotated = $credentials->rotate($app->id, $credential->id, $this->actor($request));
         abort_if($rotated === null, 404);
 
-        return response()->json([
-            'credential_id' => $rotated->mint->summary->id,
-            'secret' => $rotated->mint->secret?->reveal(),
+        $secret = $rotated->mint->secret?->reveal();
+
+        if ($request->expectsJson()) {
+            return response()->json([
+                'credential_id' => $rotated->mint->summary->id,
+                'secret' => $secret,
+            ], 201)->header('Cache-Control', 'no-store');
+        }
+
+        return response()->view('apps.secret', [
+            'app' => $app,
+            'credentialId' => $rotated->mint->summary->id,
+            'secret' => $secret,
+            'wakeUrl' => url('/'),
+            'rotated' => true,
         ], 201)->header('Cache-Control', 'no-store');
     }
 
@@ -70,10 +103,11 @@ final class ConnectedAppsController extends Controller
 
         $outcome = $credentials->revoke($app->id, $credential->id, $this->actor($request));
 
-        return match ($outcome) {
-            RevokeOutcome::NotFound => abort(404),
-            RevokeOutcome::Revoked, RevokeOutcome::AlreadyDead => response()->noContent(),
-        };
+        if ($outcome === RevokeOutcome::NotFound) {
+            abort(404);
+        }
+
+        return $request->expectsJson() ? response()->noContent() : redirect()->route('apps.show', $app);
     }
 
     private function actor(Request $request): AuditActor

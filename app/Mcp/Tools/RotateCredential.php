@@ -10,6 +10,8 @@ use ArtisanBuild\BuiltForCloud\AuditActor;
 use ArtisanBuild\BuiltForCloud\Credential;
 use ArtisanBuild\BuiltForCloud\CredentialManagementScope;
 use ArtisanBuild\BuiltForCloud\DeliveryShape;
+use ArtisanBuild\BuiltForCloud\Exceptions\RotationCutoverIncomplete;
+use ArtisanBuild\BuiltForCloud\Exceptions\RotationRefused;
 use ArtisanBuild\BuiltForCloud\Mcp\AdvertisesToolClassification;
 use ArtisanBuild\BuiltForCloud\Mcp\AdvertisesToolEffect;
 use ArtisanBuild\BuiltForCloud\Mcp\Classification;
@@ -58,16 +60,30 @@ final class RotateCredential extends WakeTool
         if ($target === null) {
             return $this->missingTarget();
         }
+        $exactTarget = resolve(IngestCredentialTarget::class)->exactForRotate($app);
+        if ($exactTarget === null) {
+            return $this->missingTarget();
+        }
         $identifier = $principal->identifier();
         if (! is_int($identifier) && ! is_string($identifier)) {
             return Response::error('The acting MCP principal cannot be attributed.');
         }
-        $result = resolve(RotateCredentialAction::class)(
-            $target->id,
-            new RotateOptions,
-            AuditActor::operatorIntegration((string) $identifier),
-            CredentialManagementScope::memberInstallation(),
-        );
+        try {
+            $result = resolve(RotateCredentialAction::class)(
+                $target->id,
+                new RotateOptions(target: $exactTarget),
+                AuditActor::operatorIntegration((string) $identifier),
+                CredentialManagementScope::memberInstallation(),
+            );
+        } catch (RotationRefused) {
+            return Response::error('The ingest credential changed during rotation.');
+        } catch (RotationCutoverIncomplete $incomplete) {
+            if (! $incomplete->getPrevious() instanceof RotationRefused) {
+                throw $incomplete;
+            }
+
+            return Response::error('Rotation partially completed. The previous credential may remain active; review and revoke it before retrying.');
+        }
         if ($result === null
             || $result->completedCutover
             || $result->mint->delivery !== DeliveryShape::Bearer

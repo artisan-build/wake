@@ -9,6 +9,7 @@ use ArtisanBuild\BuiltForCloud\Credential;
 use ArtisanBuild\BuiltForCloud\CredentialAuditEvent;
 use ArtisanBuild\BuiltForCloud\CredentialPurpose;
 use ArtisanBuild\BuiltForCloud\InstallationAuthority;
+use ArtisanBuild\BuiltForCloud\LifecycleEventType;
 use ArtisanBuild\BuiltForCloud\RevokeOutcome;
 use ArtisanBuild\BuiltForCloud\SubjectType;
 use ArtisanBuild\BuiltForCloud\User;
@@ -183,4 +184,134 @@ it('binds lifecycle operations to the exact app', function (): void {
 
     expect(resolve(ConnectedAppCredentials::class)->rotate('beta', $alpha->json('credential_id'), $actor))->toBeNull()
         ->and(resolve(ConnectedAppCredentials::class)->revoke('beta', $alpha->json('credential_id'), $actor))->toBe(RevokeOutcome::NotFound);
+});
+
+it('returns a safe conflict when the admin rotate target moves after selection', function (): void {
+    loginWakeMember();
+    $created = $this->postJson('/apps', ['id' => 'billing-api', 'name' => 'Billing API'])->assertCreated();
+    $credentialId = $created->json('credential_id');
+    $movedSubject = 'moved-admin-subject';
+    $sourceRetrievals = 0;
+    $retargeted = false;
+    $credentialsBefore = Credential::query()->count();
+    $auditsBefore = CredentialAuditEvent::query()->count();
+
+    Event::listen('eloquent.retrieved: '.Credential::class, static function (Credential $credential) use ($credentialId, $movedSubject, &$sourceRetrievals, &$retargeted): void {
+        if ($credential->id !== $credentialId || ++$sourceRetrievals !== 2) {
+            return;
+        }
+
+        Credential::query()->whereKey($credentialId)->update(['subject_ref' => $movedSubject]);
+        $retargeted = true;
+    });
+
+    try {
+        $response = $this->postJson('/apps/billing-api/credential/rotate');
+    } finally {
+        Event::forget('eloquent.retrieved: '.Credential::class);
+    }
+
+    $response->assertConflict()->assertJsonPath('message', 'The ingest credential changed during rotation.');
+    expect($retargeted)->toBeTrue()
+        ->and($response->getContent())->not->toContain($credentialId, $movedSubject, 'Billing API ingest')
+        ->and(Credential::query()->count())->toBe($credentialsBefore)
+        ->and(CredentialAuditEvent::query()->count())->toBe($auditsBefore)
+        ->and(Credential::query()->findOrFail($credentialId)->rotated_at)->toBeNull();
+});
+
+it('warns the admin when the target moves after the replacement commits', function (): void {
+    loginWakeMember();
+    $created = $this->postJson('/apps', ['id' => 'billing-api', 'name' => 'Billing API'])->assertCreated();
+    $credentialId = $created->json('credential_id');
+    $firstSecret = $created->json('secret');
+    $movedSubject = 'moved-after-admin-commit';
+    $retargeted = false;
+    $credentialsBefore = Credential::query()->count();
+    $auditsBefore = CredentialAuditEvent::query()->count();
+
+    Event::listen('eloquent.created: '.CredentialAuditEvent::class, static function (CredentialAuditEvent $event) use ($credentialId, $movedSubject, &$retargeted): void {
+        if ($event->event !== LifecycleEventType::Issued || $retargeted) {
+            return;
+        }
+
+        Credential::query()->whereKey($credentialId)->update(['subject_ref' => $movedSubject]);
+        $retargeted = true;
+    });
+
+    try {
+        $response = $this->postJson('/apps/billing-api/credential/rotate');
+    } finally {
+        Event::forget('eloquent.created: '.CredentialAuditEvent::class);
+    }
+
+    $rotation = CredentialAuditEvent::query()
+        ->where('credential_id', $credentialId)
+        ->where('event', LifecycleEventType::Rotated)
+        ->sole();
+    $replacementId = $rotation->superseded_by_credential_id;
+    $source = Credential::query()->findOrFail($credentialId);
+
+    $response->assertConflict()->assertJsonPath(
+        'message',
+        'Rotation partially completed. The previous credential may remain active; review and revoke it before retrying.',
+    );
+    expect($retargeted)->toBeTrue()
+        ->and($replacementId)->toBeString()
+        ->and($response->getContent())->not->toContain($credentialId, $replacementId, $movedSubject, 'Billing API ingest', $firstSecret)
+        ->and(Credential::query()->count())->toBe($credentialsBefore + 1)
+        ->and(CredentialAuditEvent::query()->count())->toBe($auditsBefore + 2)
+        ->and($source->rotated_at)->not->toBeNull()
+        ->and($source->revoked_at)->toBeNull()
+        ->and($source->expires_at)->toBeNull()
+        ->and(Credential::query()->whereKey($replacementId)->exists())->toBeTrue();
+});
+
+it('preserves admin failure semantics for an unrelated retirement failure', function (): void {
+    config()->set('app.debug', false);
+    loginWakeMember();
+    $created = $this->postJson('/apps', ['id' => 'billing-api', 'name' => 'Billing API'])->assertCreated();
+    $credentialId = $created->json('credential_id');
+    $firstSecret = $created->json('secret');
+    $retirementFailed = false;
+    $credentialsBefore = Credential::query()->count();
+    $auditsBefore = CredentialAuditEvent::query()->count();
+
+    DB::connection()->beforeExecuting(static function (string $query, array $bindings) use ($credentialId, &$retirementFailed): void {
+        if ($retirementFailed
+            || ! str_contains($query, 'update "credentials"')
+            || ! str_contains($query, '"expires_at"')
+            || ! in_array($credentialId, $bindings, true)) {
+            return;
+        }
+
+        $retirementFailed = true;
+
+        throw new RuntimeException('forced retirement failure');
+    });
+
+    $response = $this->postJson('/apps/billing-api/credential/rotate');
+    $rotation = CredentialAuditEvent::query()
+        ->where('credential_id', $credentialId)
+        ->where('event', LifecycleEventType::Rotated)
+        ->sole();
+    $replacementId = $rotation->superseded_by_credential_id;
+    $source = Credential::query()->findOrFail($credentialId);
+
+    $response->assertStatus(500)->assertJsonPath('message', 'Server Error');
+    expect($retirementFailed)->toBeTrue()
+        ->and($replacementId)->toBeString()
+        ->and($response->getContent())->not->toContain(
+            'The ingest credential changed during rotation.',
+            'Rotation partially completed.',
+            $credentialId,
+            $replacementId,
+            'Billing API ingest',
+            $firstSecret,
+        )
+        ->and(Credential::query()->count())->toBe($credentialsBefore + 1)
+        ->and(CredentialAuditEvent::query()->count())->toBe($auditsBefore + 2)
+        ->and($source->rotated_at)->not->toBeNull()
+        ->and($source->revoked_at)->toBeNull()
+        ->and($source->expires_at)->toBeNull()
+        ->and(Credential::query()->whereKey($replacementId)->exists())->toBeTrue();
 });

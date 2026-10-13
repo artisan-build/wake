@@ -7,6 +7,8 @@ namespace App\Http\Controllers;
 use App\Services\ConnectedAppCredentials;
 use App\Services\ConnectedAppHealth;
 use ArtisanBuild\BuiltForCloud\AuditActor;
+use ArtisanBuild\BuiltForCloud\Exceptions\RotationCutoverIncomplete;
+use ArtisanBuild\BuiltForCloud\Exceptions\RotationRefused;
 use ArtisanBuild\BuiltForCloud\RevokeOutcome;
 use ArtisanBuild\BuiltForCloud\User;
 use ArtisanBuild\WakeServer\Models\ConnectedApp;
@@ -79,7 +81,17 @@ final class ConnectedAppsController extends Controller
         $credential = $credentials->current($connectedApp->id);
         abort_if($credential === null, 404);
 
-        $rotated = $credentials->rotate($connectedApp->id, $credential->id, $this->actor($request));
+        try {
+            $rotated = $credentials->rotate($connectedApp->id, $credential->id, $this->actor($request));
+        } catch (RotationRefused) {
+            abort(409, 'The ingest credential changed during rotation.');
+        } catch (RotationCutoverIncomplete $incomplete) {
+            if (! $incomplete->getPrevious() instanceof RotationRefused) {
+                throw $incomplete;
+            }
+
+            abort(409, 'Rotation partially completed. The previous credential may remain active; review and revoke it before retrying.');
+        }
         abort_if($rotated === null, 404);
 
         $secret = $rotated->mint->secret?->reveal();

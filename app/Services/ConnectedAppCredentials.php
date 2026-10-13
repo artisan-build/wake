@@ -87,7 +87,13 @@ final readonly class ConnectedAppCredentials
             return null;
         }
 
-        return ($this->rotate)($target->id, new RotateOptions, $actor);
+        $exactTarget = $this->targets->exactForRotate($appId);
+
+        if ($exactTarget === null) {
+            return null;
+        }
+
+        return ($this->rotate)($target->id, new RotateOptions(target: $exactTarget), $actor);
     }
 
     public function revoke(string $appId, string $credentialId, AuditActor $actor): RevokeOutcome

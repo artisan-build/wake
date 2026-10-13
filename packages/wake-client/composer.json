@@ -16,10 +16,13 @@
     "require": {
         "php": "^8.3",
         "artisan-build/wake-contracts": "^0.1",
-        "illuminate/contracts": "^13.0",
-        "illuminate/http": "^13.0",
-        "illuminate/log": "^13.0",
-        "illuminate/support": "^13.0"
+        "illuminate/console": "^11.0 || ^12.0 || ^13.0",
+        "illuminate/contracts": "^11.0 || ^12.0 || ^13.0",
+        "illuminate/http": "^11.0 || ^12.0 || ^13.0",
+        "illuminate/log": "^11.0 || ^12.0 || ^13.0",
+        "illuminate/queue": "^11.0 || ^12.0 || ^13.0",
+        "illuminate/support": "^11.0 || ^12.0 || ^13.0",
+        "monolog/monolog": "^3.5"
     },
     "require-dev": {
         "larastan/larastan": "^3.9",

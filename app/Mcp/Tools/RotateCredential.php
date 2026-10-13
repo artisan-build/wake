@@ -75,8 +75,14 @@ final class RotateCredential extends WakeTool
                 AuditActor::operatorIntegration((string) $identifier),
                 CredentialManagementScope::memberInstallation(),
             );
-        } catch (RotationRefused|RotationCutoverIncomplete) {
+        } catch (RotationRefused) {
             return Response::error('The ingest credential changed during rotation.');
+        } catch (RotationCutoverIncomplete $incomplete) {
+            if (! $incomplete->getPrevious() instanceof RotationRefused) {
+                throw $incomplete;
+            }
+
+            return Response::error('Rotation partially completed. The previous credential may remain active; review and revoke it before retrying.');
         }
         if ($result === null
             || $result->completedCutover

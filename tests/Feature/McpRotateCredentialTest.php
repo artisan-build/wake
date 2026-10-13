@@ -194,3 +194,110 @@ it('returns a safe MCP error when the rotate target moves after selection', func
         ->and(CredentialAuditEvent::query()->count())->toBe($auditsBefore)
         ->and(Credential::query()->findOrFail($source->credential->id)->rotated_at)->toBeNull();
 });
+
+it('warns MCP when the target moves after the replacement commits', function (): void {
+    $source = $this->mintCredential([
+        'purpose' => CredentialPurpose::Consumption,
+        'subject_type' => SubjectType::Installation,
+        'subject_ref' => 'alpha',
+        'name' => 'Sensitive MCP ingest',
+    ]);
+    $arguments = ['app' => 'alpha', 'credential_id' => $source->credential->id];
+    $preview = callRotateTool($this->actor->bearerHeader(), $arguments)->assertOk();
+    $confirmation = $preview->json('result._meta.two_phase.confirmation');
+    $movedSubject = 'moved-after-mcp-commit';
+    $retargeted = false;
+    $credentialsBefore = Credential::query()->count();
+    $auditsBefore = CredentialAuditEvent::query()->count();
+
+    Event::listen('eloquent.created: '.CredentialAuditEvent::class, static function (CredentialAuditEvent $event) use ($source, $movedSubject, &$retargeted): void {
+        if ($event->event !== LifecycleEventType::Issued || $retargeted) {
+            return;
+        }
+
+        Credential::query()->whereKey($source->credential->id)->update(['subject_ref' => $movedSubject]);
+        $retargeted = true;
+    });
+
+    try {
+        $response = callRotateTool($this->actor->bearerHeader(), [...$arguments, 'confirm' => $confirmation])->assertOk();
+    } finally {
+        Event::forget('eloquent.created: '.CredentialAuditEvent::class);
+    }
+
+    $rotation = CredentialAuditEvent::query()
+        ->where('credential_id', $source->credential->id)
+        ->where('event', LifecycleEventType::Rotated)
+        ->sole();
+    $replacementId = $rotation->superseded_by_credential_id;
+    $old = Credential::query()->findOrFail($source->credential->id);
+
+    $response->assertJsonPath('result.isError', true);
+    expect($retargeted)->toBeTrue()
+        ->and($replacementId)->toBeString()
+        ->and($response->getContent())->toContain('Rotation partially completed. The previous credential may remain active; review and revoke it before retrying.')
+        ->not->toContain($source->credential->id, $replacementId, $movedSubject, 'Sensitive MCP ingest', $source->plaintext(), $this->actor->plaintext())
+        ->and(Credential::query()->count())->toBe($credentialsBefore + 1)
+        ->and(CredentialAuditEvent::query()->count())->toBe($auditsBefore + 2)
+        ->and($old->rotated_at)->not->toBeNull()
+        ->and($old->revoked_at)->toBeNull()
+        ->and($old->expires_at)->toBeNull()
+        ->and(Credential::query()->whereKey($replacementId)->exists())->toBeTrue();
+});
+
+it('preserves MCP failure semantics for an unrelated retirement failure', function (): void {
+    config()->set('app.debug', false);
+    $source = $this->mintCredential([
+        'purpose' => CredentialPurpose::Consumption,
+        'subject_type' => SubjectType::Installation,
+        'subject_ref' => 'alpha',
+        'name' => 'Sensitive MCP ingest',
+    ]);
+    $arguments = ['app' => 'alpha', 'credential_id' => $source->credential->id];
+    $preview = callRotateTool($this->actor->bearerHeader(), $arguments)->assertOk();
+    $confirmation = $preview->json('result._meta.two_phase.confirmation');
+    $retirementFailed = false;
+    $credentialsBefore = Credential::query()->count();
+    $auditsBefore = CredentialAuditEvent::query()->count();
+
+    DB::connection()->beforeExecuting(static function (string $query, array $bindings) use ($source, &$retirementFailed): void {
+        if ($retirementFailed
+            || ! str_contains($query, 'update "credentials"')
+            || ! str_contains($query, '"expires_at"')
+            || ! in_array($source->credential->id, $bindings, true)) {
+            return;
+        }
+
+        $retirementFailed = true;
+
+        throw new RuntimeException('forced retirement failure');
+    });
+
+    $response = callRotateTool($this->actor->bearerHeader(), [...$arguments, 'confirm' => $confirmation])->assertOk();
+    $rotation = CredentialAuditEvent::query()
+        ->where('credential_id', $source->credential->id)
+        ->where('event', LifecycleEventType::Rotated)
+        ->sole();
+    $replacementId = $rotation->superseded_by_credential_id;
+    $old = Credential::query()->findOrFail($source->credential->id);
+
+    $response->assertJsonPath('result.isError', true);
+    expect($retirementFailed)->toBeTrue()
+        ->and($replacementId)->toBeString()
+        ->and($response->getContent())->toContain('An internal server error occurred.')
+        ->not->toContain(
+            'The ingest credential changed during rotation.',
+            'Rotation partially completed.',
+            $source->credential->id,
+            $replacementId,
+            'Sensitive MCP ingest',
+            $source->plaintext(),
+            $this->actor->plaintext(),
+        )
+        ->and(Credential::query()->count())->toBe($credentialsBefore + 1)
+        ->and(CredentialAuditEvent::query()->count())->toBe($auditsBefore + 2)
+        ->and($old->rotated_at)->not->toBeNull()
+        ->and($old->revoked_at)->toBeNull()
+        ->and($old->expires_at)->toBeNull()
+        ->and(Credential::query()->whereKey($replacementId)->exists())->toBeTrue();
+});

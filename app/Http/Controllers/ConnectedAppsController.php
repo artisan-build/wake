@@ -83,8 +83,14 @@ final class ConnectedAppsController extends Controller
 
         try {
             $rotated = $credentials->rotate($connectedApp->id, $credential->id, $this->actor($request));
-        } catch (RotationRefused|RotationCutoverIncomplete) {
+        } catch (RotationRefused) {
             abort(409, 'The ingest credential changed during rotation.');
+        } catch (RotationCutoverIncomplete $incomplete) {
+            if (! $incomplete->getPrevious() instanceof RotationRefused) {
+                throw $incomplete;
+            }
+
+            abort(409, 'Rotation partially completed. The previous credential may remain active; review and revoke it before retrying.');
         }
         abort_if($rotated === null, 404);
 

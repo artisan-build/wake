@@ -19,6 +19,7 @@ use Carbon\CarbonImmutable;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\Request as HttpRequest;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
 use Laravel\Mcp\Request as McpRequest;
@@ -153,4 +154,43 @@ it('enforces rotate authorization strict arguments effect binding and replay', f
     callRotateTool($this->actor->bearerHeader(), [...$arguments, 'confirm' => $confirmation])->assertOk();
     callRotateTool($this->actor->bearerHeader(), [...$arguments, 'confirm' => $confirmation])
         ->assertStatus(400)->assertJsonPath('error.message', TwoPhaseConfirmationRefused::SPENT);
+});
+
+it('returns a safe MCP error when the rotate target moves after selection', function (): void {
+    $source = $this->mintCredential([
+        'purpose' => CredentialPurpose::Consumption,
+        'subject_type' => SubjectType::Installation,
+        'subject_ref' => 'alpha',
+        'name' => 'Sensitive MCP ingest',
+    ]);
+    $arguments = ['app' => 'alpha', 'credential_id' => $source->credential->id];
+    $preview = callRotateTool($this->actor->bearerHeader(), $arguments)->assertOk();
+    $confirmation = $preview->json('result._meta.two_phase.confirmation');
+    $movedSubject = 'moved-mcp-subject';
+    $retargeted = false;
+    $credentialsBefore = Credential::query()->count();
+    $auditsBefore = CredentialAuditEvent::query()->count();
+
+    Event::listen('eloquent.retrieved: '.Credential::class, static function (Credential $credential) use ($source, $movedSubject, &$retargeted): void {
+        if ($credential->id !== $source->credential->id || $retargeted) {
+            return;
+        }
+
+        Credential::query()->whereKey($credential->id)->update(['subject_ref' => $movedSubject]);
+        $retargeted = true;
+    });
+
+    try {
+        $response = callRotateTool($this->actor->bearerHeader(), [...$arguments, 'confirm' => $confirmation])->assertOk();
+    } finally {
+        Event::forget('eloquent.retrieved: '.Credential::class);
+    }
+
+    $response->assertJsonPath('result.isError', true);
+    expect($retargeted)->toBeTrue()
+        ->and($response->getContent())->toContain('The ingest credential changed during rotation.')
+        ->not->toContain($source->credential->id, $movedSubject, 'Sensitive MCP ingest', $source->plaintext())
+        ->and(Credential::query()->count())->toBe($credentialsBefore)
+        ->and(CredentialAuditEvent::query()->count())->toBe($auditsBefore)
+        ->and(Credential::query()->findOrFail($source->credential->id)->rotated_at)->toBeNull();
 });

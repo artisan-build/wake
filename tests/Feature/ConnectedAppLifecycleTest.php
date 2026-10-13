@@ -184,3 +184,36 @@ it('binds lifecycle operations to the exact app', function (): void {
     expect(resolve(ConnectedAppCredentials::class)->rotate('beta', $alpha->json('credential_id'), $actor))->toBeNull()
         ->and(resolve(ConnectedAppCredentials::class)->revoke('beta', $alpha->json('credential_id'), $actor))->toBe(RevokeOutcome::NotFound);
 });
+
+it('returns a safe conflict when the admin rotate target moves after selection', function (): void {
+    loginWakeMember();
+    $created = $this->postJson('/apps', ['id' => 'billing-api', 'name' => 'Billing API'])->assertCreated();
+    $credentialId = $created->json('credential_id');
+    $movedSubject = 'moved-admin-subject';
+    $sourceRetrievals = 0;
+    $retargeted = false;
+    $credentialsBefore = Credential::query()->count();
+    $auditsBefore = CredentialAuditEvent::query()->count();
+
+    Event::listen('eloquent.retrieved: '.Credential::class, static function (Credential $credential) use ($credentialId, $movedSubject, &$sourceRetrievals, &$retargeted): void {
+        if ($credential->id !== $credentialId || ++$sourceRetrievals !== 2) {
+            return;
+        }
+
+        Credential::query()->whereKey($credentialId)->update(['subject_ref' => $movedSubject]);
+        $retargeted = true;
+    });
+
+    try {
+        $response = $this->postJson('/apps/billing-api/credential/rotate');
+    } finally {
+        Event::forget('eloquent.retrieved: '.Credential::class);
+    }
+
+    $response->assertConflict()->assertJsonPath('message', 'The ingest credential changed during rotation.');
+    expect($retargeted)->toBeTrue()
+        ->and($response->getContent())->not->toContain($credentialId, $movedSubject, 'Billing API ingest')
+        ->and(Credential::query()->count())->toBe($credentialsBefore)
+        ->and(CredentialAuditEvent::query()->count())->toBe($auditsBefore)
+        ->and(Credential::query()->findOrFail($credentialId)->rotated_at)->toBeNull();
+});

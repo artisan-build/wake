@@ -114,3 +114,62 @@ jobs:
       - name: Run Security Audit
         working-directory: packages/${{ matrix.package }}
         run: composer audit
+
+  lowest-deps:
+    name: tests (lowest deps) / Laravel ${{ matrix.laravel }} / PHP 8.5
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - laravel: '11'
+            testbench: '^9.0'
+            pest: '^3.0'
+          - laravel: '12'
+            testbench: '^10.0'
+            pest: '^3.0'
+          - laravel: '13'
+            testbench: '^11.0'
+            pest: '^4.0'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+        with:
+          persist-credentials: false
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: '8.5'
+          tools: composer:v2
+          coverage: none
+
+      - name: Pin Laravel lane
+        working-directory: packages/wake-client
+        run: |
+          composer config audit.block-insecure false
+          composer require \
+            "illuminate/console:^${{ matrix.laravel }}.0" \
+            "illuminate/contracts:^${{ matrix.laravel }}.0" \
+            "illuminate/http:^${{ matrix.laravel }}.0" \
+            "illuminate/log:^${{ matrix.laravel }}.0" \
+            "illuminate/queue:^${{ matrix.laravel }}.0" \
+            "illuminate/support:^${{ matrix.laravel }}.0" \
+            --no-update --no-interaction
+          composer require --dev \
+            "orchestra/testbench:${{ matrix.testbench }}" \
+            "pestphp/pest:${{ matrix.pest }}" \
+            --no-update --no-interaction
+
+      - name: Install lowest dependencies
+        working-directory: packages/wake-client
+        run: composer update --prefer-lowest --prefer-stable -W --no-interaction
+
+      - name: Show resolved Laravel version
+        working-directory: packages/wake-client
+        run: composer show laravel/framework
+
+      - name: Run package tests
+        working-directory: packages/wake-client
+        run: composer test

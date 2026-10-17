@@ -25,6 +25,19 @@ it('round trips every envelope and event field through canonical JSON', function
         ->and($roundTrip->rows[0]->correlationId)->toBe('req-1');
 });
 
+it('normalizes context and extra key ordering in the array shape, not only in JSON', function (): void {
+    $event = contractEvent([
+        'context' => ['zeta' => 1, 'alpha' => ['inner-z' => 1, 'inner-a' => 2]],
+        'extra' => ['mike' => 1, 'bravo' => 2],
+    ]);
+
+    $array = $event->toArray();
+
+    expect(array_keys($array['context']))->toBe(['alpha', 'zeta'])
+        ->and(array_keys($array['context']['alpha']))->toBe(['inner-a', 'inner-z'])
+        ->and(array_keys($array['extra']))->toBe(['bravo', 'mike']);
+});
+
 it('accepts both batch bounds', function (int $count): void {
     $rows = array_fill(0, $count, contractEvent());
 

@@ -222,6 +222,39 @@ it('guards normalization and filtering re-entry while flushing the outer batch',
         ->and($body['rows'][0]['context']['callback'])->toBe('normalized');
 });
 
+it('refuses records that re-enter while a flush driven outside the handler frame is delivering', function (): void {
+    config()->set('wake.batch_size', 5);
+    $handler = app(WakeHandler::class);
+    Http::fake(function (Request $request) use ($handler) {
+        $handler->handle(deliveryRecord('reentrant'));
+
+        return Http::response(receipt(2), 202, ['Content-Type' => 'application/json']);
+    });
+
+    $handler->handle(deliveryRecord('outer-1'));
+    $handler->handle(deliveryRecord('outer-2'));
+    expect($handler->state())->toBe(['buffered' => 2, 'dropped' => 0]);
+
+    expect($handler->flush())->toBeTrue();
+    expect($handler->state())->toBe(['buffered' => 0, 'dropped' => 0]);
+    Http::assertSentCount(1);
+    $body = Http::recorded()->first()[0]->data();
+    expect($body['rows'])->toHaveCount(2)
+        ->and(collect($body['rows'])->pluck('message'))->not->toContain('reentrant');
+});
+
+it('delivers an identity-less record exactly once when the same instance re-enters', function (): void {
+    config()->set('wake.batch_size', 5);
+    $handler = app(WakeHandler::class);
+    Http::fake(['*' => Http::response(receipt(1), 202, ['Content-Type' => 'application/json'])]);
+    $record = new LogRecord(new DateTimeImmutable, 'app', Level::Info, 'direct');
+
+    $handler->handle($record);
+    $handler->handle($record);
+
+    expect($handler->state())->toBe(['buffered' => 1, 'dropped' => 0]);
+});
+
 it('accepts a JSON 202 content type with parameters', function (): void {
     Http::fake(['*' => Http::response(receipt(1), 202, ['Content-Type' => 'application/json; charset=utf-8'])]);
     $handler = app(WakeHandler::class);

@@ -243,6 +243,18 @@ it('refuses records that re-enter while a flush driven outside the handler frame
         ->and(collect($body['rows'])->pluck('message'))->not->toContain('reentrant');
 });
 
+it('delivers an identity-less record exactly once when the same instance re-enters', function (): void {
+    config()->set('wake.batch_size', 5);
+    $handler = app(WakeHandler::class);
+    Http::fake(['*' => Http::response(receipt(1), 202, ['Content-Type' => 'application/json'])]);
+    $record = new LogRecord(new DateTimeImmutable, 'app', Level::Info, 'direct');
+
+    $handler->handle($record);
+    $handler->handle($record);
+
+    expect($handler->state())->toBe(['buffered' => 1, 'dropped' => 0]);
+});
+
 it('accepts a JSON 202 content type with parameters', function (): void {
     Http::fake(['*' => Http::response(receipt(1), 202, ['Content-Type' => 'application/json; charset=utf-8'])]);
     $handler = app(WakeHandler::class);

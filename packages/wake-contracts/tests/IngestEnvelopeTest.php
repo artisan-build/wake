@@ -38,6 +38,28 @@ it('rejects batches outside the bounds', function (array $rows): void {
     '501 rows' => [array_fill(0, 501, contractEvent())],
 ])->throws(ContractValidationException::class, 'must contain between 1 and 500 events');
 
+it('rejects envelope guard violations at their boundaries', function (Closure $build): void {
+    $build();
+})->with([
+    'client version over 64 bytes' => fn () => contractEnvelope(['clientVersion' => str_repeat('v', 65)]),
+    'idempotency key with forbidden characters' => fn () => contractEnvelope(['idempotencyKey' => 'bad key!']),
+])->throws(ContractValidationException::class);
+
+it('accepts a zero dropped count and rejects constructor rows that are not events', function (): void {
+    expect(contractEnvelope(['droppedCount' => 0])->droppedCount)->toBe(0);
+
+    expect(fn () => new IngestEnvelope(1, '1.2.3', 0, '01ARZ3NDEKTSV4RRFFQ69G5FAX', ['not-an-event']))
+        ->toThrow(ContractValidationException::class, 'must be a LogEvent');
+});
+
+it('rejects list-shaped rows when parsing an envelope', function (): void {
+    $payload = contractEnvelope()->toArray();
+    $payload['rows'] = [['not', 'an', 'object']];
+
+    expect(fn () => IngestEnvelope::fromArray($payload))
+        ->toThrow(ContractValidationException::class, 'must be an object');
+});
+
 it('rejects invalid event identifiers', function (string $eventId): void {
     contractEvent(['eventId' => $eventId]);
 })->with([

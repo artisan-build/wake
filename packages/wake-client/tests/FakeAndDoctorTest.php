@@ -7,9 +7,13 @@ use ArtisanBuild\WakeClient\Contracts\Transport;
 use ArtisanBuild\WakeClient\Logging\WakeHandler;
 use ArtisanBuild\WakeClient\Wake;
 use ArtisanBuild\WakeContracts\LogEvent;
+use Illuminate\Console\OutputStyle;
+use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Support\Facades\Http;
 use Monolog\Level;
 use Monolog\LogRecord;
+use Symfony\Component\Console\Input\ArrayInput;
+use Symfony\Component\Console\Output\BufferedOutput;
 
 it('provides a public fake that captures the normal envelope path without HTTP', function (): void {
     config()->set(['wake.url' => null, 'wake.token' => null]);
@@ -115,13 +119,13 @@ it('doctor success output never carries the token on a directly captured stream'
     app()->forgetInstance(WakeHandler::class);
     Http::fake(['*' => Http::response(doctorReceipt(), 202)]);
 
-    $buffer = new Symfony\Component\Console\Output\BufferedOutput;
-    $style = new Illuminate\Console\OutputStyle(
-        new Symfony\Component\Console\Input\ArrayInput([]),
+    $buffer = new BufferedOutput;
+    $style = new OutputStyle(
+        new ArrayInput([]),
         $buffer,
     );
 
-    $exit = app(Illuminate\Contracts\Console\Kernel::class)->call('wake:doctor', [], $style);
+    $exit = app(Kernel::class)->call('wake:doctor', [], $style);
 
     $output = $buffer->fetch();
     expect($exit)->toBe(0)

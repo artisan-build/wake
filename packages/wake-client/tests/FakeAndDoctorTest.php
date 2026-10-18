@@ -59,17 +59,31 @@ it('doctor succeeds only for a valid accepted round trip without printing the to
 });
 
 it('doctor fails for partial configuration and malformed acceptance', function (): void {
-    config()->set(['wake.url' => 'https://wake.test', 'wake.token' => null]);
-    app()->forgetInstance(WakeHandler::class);
-    $this->artisan('wake:doctor')->assertFailed();
-
-    config()->set(['wake.token' => 'doctor-secret']);
+    config()->set(['wake.url' => 'https://wake.test', 'wake.token' => 'doctor-secret']);
     app()->forgetInstance(WakeHandler::class);
     app()->forgetInstance(Transport::class);
     Http::fake(['*' => Http::response(['accepted_count' => 1], 202)]);
     $this->artisan('wake:doctor')
         ->assertFailed()
+        ->expectsOutputToContain('could not confirm an ingest round trip')
         ->doesntExpectOutputToContain('doctor-secret');
+
+    config()->set(['wake.token' => null]);
+    app()->forgetInstance(WakeHandler::class);
+    app()->forgetInstance(Transport::class);
+    Http::fake(['*' => Http::response(doctorReceipt(), 202)]);
+    $this->artisan('wake:doctor')
+        ->assertFailed()
+        ->expectsOutputToContain('not fully configured')
+        ->doesntExpectOutputToContain('doctor-secret');
+
+    config()->set(['wake.token' => '']);
+    app()->forgetInstance(WakeHandler::class);
+    app()->forgetInstance(Transport::class);
+    Http::fake(['*' => Http::response(doctorReceipt(), 202)]);
+    $this->artisan('wake:doctor')
+        ->assertFailed()
+        ->expectsOutputToContain('not fully configured');
 });
 
 it('doctor cannot reuse a stale prior success when its record is rejected', function (): void {
@@ -90,7 +104,10 @@ it('doctor cannot reuse a stale prior success when its record is rejected', func
     expect($handler->probe(new LogRecord(new DateTimeImmutable, 'doctor', Level::Info, 'prior success')))->toBeTrue();
 
     $filter->reject = true;
-    $this->artisan('wake:doctor')->assertFailed();
+    $this->artisan('wake:doctor')
+        ->assertFailed()
+        ->expectsOutputToContain('could not confirm an ingest round trip')
+        ->doesntExpectOutputToContain('doctor-secret');
 });
 
 function doctorReceipt(): array

@@ -84,7 +84,7 @@ function deletionWorkerEnvironment(): array
         'DB_CONNECTION' => 'pgsql',
         'DB_HOST' => '127.0.0.1',
         'DB_PORT' => '5432',
-        'DB_DATABASE' => 'wake_test',
+        'DB_DATABASE' => (string) env('DB_DATABASE', 'wake_test'),
         'DB_USERNAME' => 'root',
         'DB_PASSWORD' => '',
         'DB_URL' => '',

@@ -110,6 +110,25 @@ it('doctor cannot reuse a stale prior success when its record is rejected', func
         ->doesntExpectOutputToContain('doctor-secret');
 });
 
+it('doctor success output never carries the token on a directly captured stream', function (): void {
+    config()->set(['wake.url' => 'https://wake.test', 'wake.token' => 'doctor-secret']);
+    app()->forgetInstance(WakeHandler::class);
+    Http::fake(['*' => Http::response(doctorReceipt(), 202)]);
+
+    $buffer = new Symfony\Component\Console\Output\BufferedOutput;
+    $style = new Illuminate\Console\OutputStyle(
+        new Symfony\Component\Console\Input\ArrayInput([]),
+        $buffer,
+    );
+
+    $exit = app(Illuminate\Contracts\Console\Kernel::class)->call('wake:doctor', [], $style);
+
+    $output = $buffer->fetch();
+    expect($exit)->toBe(0)
+        ->and(str_contains($output, 'healthy'))->toBeTrue()
+        ->and(str_contains($output, 'doctor-secret'))->toBeFalse();
+});
+
 function doctorReceipt(): array
 {
     return ['batch_id' => '01ARZ3NDEKTSV4RRFFQ69G5FAW', 'accepted_count' => 1, 'duplicate' => false];

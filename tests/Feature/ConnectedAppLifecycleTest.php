@@ -213,7 +213,9 @@ it('returns a safe conflict when the admin rotate target moves after selection',
 
     $response->assertConflict()->assertJsonPath('message', 'The ingest credential changed during rotation.');
     expect($retargeted)->toBeTrue()
-        ->and($response->getContent())->not->toContain($credentialId, $movedSubject, 'Billing API ingest')
+        ->and($response->getContent())->not->toContain($credentialId)
+        ->not->toContain($movedSubject)
+        ->not->toContain('Billing API ingest')
         ->and(Credential::query()->count())->toBe($credentialsBefore)
         ->and(CredentialAuditEvent::query()->count())->toBe($auditsBefore)
         ->and(Credential::query()->findOrFail($credentialId)->rotated_at)->toBeNull();
@@ -257,7 +259,11 @@ it('warns the admin when the target moves after the replacement commits', functi
     );
     expect($retargeted)->toBeTrue()
         ->and($replacementId)->toBeString()
-        ->and($response->getContent())->not->toContain($credentialId, $replacementId, $movedSubject, 'Billing API ingest', $firstSecret)
+        ->and($response->getContent())->not->toContain($credentialId)
+        ->not->toContain($replacementId)
+        ->not->toContain($movedSubject)
+        ->not->toContain('Billing API ingest')
+        ->not->toContain($firstSecret)
         ->and(Credential::query()->count())->toBe($credentialsBefore + 1)
         ->and(CredentialAuditEvent::query()->count())->toBe($auditsBefore + 2)
         ->and($source->rotated_at)->not->toBeNull()
@@ -300,14 +306,12 @@ it('preserves admin failure semantics for an unrelated retirement failure', func
     $response->assertStatus(500)->assertJsonPath('message', 'Server Error');
     expect($retirementFailed)->toBeTrue()
         ->and($replacementId)->toBeString()
-        ->and($response->getContent())->not->toContain(
-            'The ingest credential changed during rotation.',
-            'Rotation partially completed.',
-            $credentialId,
-            $replacementId,
-            'Billing API ingest',
-            $firstSecret,
-        )
+        ->and($response->getContent())->not->toContain('The ingest credential changed during rotation.')
+        ->not->toContain('Rotation partially completed.')
+        ->not->toContain($credentialId)
+        ->not->toContain($replacementId)
+        ->not->toContain('Billing API ingest')
+        ->not->toContain($firstSecret)
         ->and(Credential::query()->count())->toBe($credentialsBefore + 1)
         ->and(CredentialAuditEvent::query()->count())->toBe($auditsBefore + 2)
         ->and($source->rotated_at)->not->toBeNull()

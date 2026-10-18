@@ -88,16 +88,19 @@ it('previews without mutation then revokes through the unified action with attri
     expect($confirmation)->toBeString()
         ->and($target->credential->refresh()->revoked_at)->toBeNull()
         ->and(CredentialAuditEvent::query()->where('credential_id', $target->credential->id)->count())->toBe(0)
-        ->and($preview->getContent())->not->toContain($target->plaintext(), $this->actor->plaintext());
+        ->and($preview->getContent())->not->toContain($target->plaintext())
+        ->not->toContain($this->actor->plaintext());
 
     $confirmed = callRevokeTool('/mcp/destructive', $this->actor->bearerHeader(), [...$arguments, 'confirm' => $confirmation])->assertOk();
     expect($target->credential->refresh()->revoked_at)->not->toBeNull()
-        ->and($confirmed->getContent())->not->toContain($target->plaintext(), $this->actor->plaintext());
+        ->and($confirmed->getContent())->not->toContain($target->plaintext())
+        ->not->toContain($this->actor->plaintext());
     $audit = CredentialAuditEvent::query()->where('credential_id', $target->credential->id)->sole();
     expect($audit->event)->toBe(LifecycleEventType::Revoked)
         ->and($audit->actor_type)->toBe(AuditActorType::OperatorIntegration)
         ->and($audit->actor_ref)->toBe((string) $this->actor->credential->getAuthIdentifier())
-        ->and(json_encode($audit->getAttributes(), JSON_THROW_ON_ERROR))->not->toContain($target->plaintext(), $this->actor->plaintext());
+        ->and(json_encode($audit->getAttributes(), JSON_THROW_ON_ERROR))->not->toContain($target->plaintext())
+        ->not->toContain($this->actor->plaintext());
 });
 
 it('fails closed for invalid targets before confirmation or mutation', function (): void {

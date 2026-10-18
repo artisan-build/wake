@@ -51,15 +51,34 @@ it('rebuilds a previously resolved wake channel around the fake handler', functi
     $fake->assertSentCount(1);
 });
 
+/**
+ * Run the doctor on a directly captured output stream. PendingCommand's Mockery
+ * expectations dispatch each write to the FIRST matching expectation, so a
+ * positive `expectsOutputToContain` shadows a same-line negative
+ * `doesntExpectOutputToContain`; every doctor secrecy assertion therefore reads
+ * the real captured stream instead of the mocked one.
+ *
+ * @return array{0: int, 1: string}
+ */
+function runDoctor(): array
+{
+    $buffer = new BufferedOutput;
+    $style = new OutputStyle(new ArrayInput([]), $buffer);
+    $exit = app(Kernel::class)->call('wake:doctor', [], $style);
+
+    return [$exit, $buffer->fetch()];
+}
+
 it('doctor succeeds only for a valid accepted round trip without printing the token', function (): void {
     config()->set(['wake.url' => 'https://wake.test', 'wake.token' => 'doctor-secret']);
     app()->forgetInstance(WakeHandler::class);
     Http::fake(['*' => Http::response(doctorReceipt(), 202)]);
 
-    $this->artisan('wake:doctor')
-        ->assertSuccessful()
-        ->expectsOutputToContain('healthy')
-        ->doesntExpectOutputToContain('doctor-secret');
+    [$exit, $output] = runDoctor();
+
+    expect($exit)->toBe(0)
+        ->and($output)->toContain('healthy')
+        ->and($output)->not->toContain('doctor-secret');
 });
 
 it('doctor fails for partial configuration and malformed acceptance', function (): void {
@@ -67,27 +86,34 @@ it('doctor fails for partial configuration and malformed acceptance', function (
     app()->forgetInstance(WakeHandler::class);
     app()->forgetInstance(Transport::class);
     Http::fake(['*' => Http::response(['accepted_count' => 1], 202)]);
-    $this->artisan('wake:doctor')
-        ->assertFailed()
-        ->expectsOutputToContain('could not confirm an ingest round trip')
-        ->doesntExpectOutputToContain('doctor-secret');
+
+    [$exit, $output] = runDoctor();
+
+    expect($exit)->toBe(1)
+        ->and($output)->toContain('could not confirm an ingest round trip')
+        ->and($output)->not->toContain('doctor-secret');
 
     config()->set(['wake.token' => null]);
     app()->forgetInstance(WakeHandler::class);
     app()->forgetInstance(Transport::class);
     Http::fake(['*' => Http::response(doctorReceipt(), 202)]);
-    $this->artisan('wake:doctor')
-        ->assertFailed()
-        ->expectsOutputToContain('not fully configured')
-        ->doesntExpectOutputToContain('doctor-secret');
+
+    [$exit, $output] = runDoctor();
+
+    expect($exit)->toBe(1)
+        ->and($output)->toContain('not fully configured')
+        ->and($output)->not->toContain('doctor-secret');
 
     config()->set(['wake.token' => '']);
     app()->forgetInstance(WakeHandler::class);
     app()->forgetInstance(Transport::class);
     Http::fake(['*' => Http::response(doctorReceipt(), 202)]);
-    $this->artisan('wake:doctor')
-        ->assertFailed()
-        ->expectsOutputToContain('not fully configured');
+
+    [$exit, $output] = runDoctor();
+
+    expect($exit)->toBe(1)
+        ->and($output)->toContain('not fully configured')
+        ->and($output)->not->toContain('doctor-secret');
 });
 
 it('doctor cannot reuse a stale prior success when its record is rejected', function (): void {
@@ -108,29 +134,12 @@ it('doctor cannot reuse a stale prior success when its record is rejected', func
     expect($handler->probe(new LogRecord(new DateTimeImmutable, 'doctor', Level::Info, 'prior success')))->toBeTrue();
 
     $filter->reject = true;
-    $this->artisan('wake:doctor')
-        ->assertFailed()
-        ->expectsOutputToContain('could not confirm an ingest round trip')
-        ->doesntExpectOutputToContain('doctor-secret');
-});
 
-it('doctor success output never carries the token on a directly captured stream', function (): void {
-    config()->set(['wake.url' => 'https://wake.test', 'wake.token' => 'doctor-secret']);
-    app()->forgetInstance(WakeHandler::class);
-    Http::fake(['*' => Http::response(doctorReceipt(), 202)]);
+    [$exit, $output] = runDoctor();
 
-    $buffer = new BufferedOutput;
-    $style = new OutputStyle(
-        new ArrayInput([]),
-        $buffer,
-    );
-
-    $exit = app(Kernel::class)->call('wake:doctor', [], $style);
-
-    $output = $buffer->fetch();
-    expect($exit)->toBe(0)
-        ->and(str_contains($output, 'healthy'))->toBeTrue()
-        ->and(str_contains($output, 'doctor-secret'))->toBeFalse();
+    expect($exit)->toBe(1)
+        ->and($output)->toContain('could not confirm an ingest round trip')
+        ->and($output)->not->toContain('doctor-secret');
 });
 
 function doctorReceipt(): array

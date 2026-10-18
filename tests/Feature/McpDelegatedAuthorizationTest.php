@@ -73,8 +73,8 @@ function wakeDelegatedAssertion(string $issuer, string $audience, string $subjec
     }
 
     $keyId = 'wake-test-'.Str::lower((string) Str::ulid());
-    app(ConsoleKeyring::class)->add($keyId, $secret->getPublicKey()->toHexString());
-    app(ConsoleKeyring::class)->activate($keyId);
+    resolve(ConsoleKeyring::class)->add($keyId, $secret->getPublicKey()->toHexString());
+    resolve(ConsoleKeyring::class)->activate($keyId);
     $now = CarbonImmutable::now();
 
     return (new Builder)
@@ -123,12 +123,12 @@ it('keeps a delegated numeric identifier distinct from the same local user id', 
     ));
     app()->instance('request', $request);
 
-    $principal = app(McpAccess::class)->authorize(WakeCredentialAbility::Read);
+    $principal = resolve(McpAccess::class)->authorize(WakeCredentialAbility::Read);
 
     expect($actor->getKey())->toBe($user->getKey())
         ->and($principal->principal?->is($actor))->toBeTrue()
         ->and($principal->identifier())->toBe('bfc-console:'.$user->getKey())
-        ->and(app(ActingPrincipalResolver::class)->localUser($request))->toBeNull();
+        ->and(resolve(ActingPrincipalResolver::class)->localUser($request))->toBeNull();
 });
 
 it('reaches the canonical principal resolver in both phases of every destructive tool', function (): void {
@@ -147,7 +147,7 @@ it('reaches the canonical principal resolver in both phases of every destructive
         RevokeCredential::class => ['app' => 'missing', 'credential_id' => 'missing'],
         RotateCredential::class => ['app' => 'missing', 'credential_id' => 'missing'],
     ] as $toolClass => $arguments) {
-        $tool = app($toolClass);
+        $tool = resolve($toolClass);
         foreach (['preview', 'handle'] as $method) {
             $phase = $toolClass.'::'.$method;
             expect($tool->{$method}(new McpRequest($arguments)))->toBeInstanceOf(Response::class);

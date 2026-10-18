@@ -2,6 +2,17 @@
 
 declare(strict_types=1);
 
+use App\Mcp\Tools\AggregateLogs;
+use App\Mcp\Tools\DeleteAppLogs;
+use App\Mcp\Tools\GetContext;
+use App\Mcp\Tools\IngestHealth;
+use App\Mcp\Tools\ListApps;
+use App\Mcp\Tools\RecentErrors;
+use App\Mcp\Tools\RevokeCredential;
+use App\Mcp\Tools\RotateCredential;
+use App\Mcp\Tools\SearchLogs;
+use App\Mcp\Tools\TailLogs;
+use App\Mcp\WakeMcpServer;
 use ArtisanBuild\BuiltForCloud\Commands\ConsoleReKeyCommand;
 use ArtisanBuild\BuiltForCloud\Commands\ConsoleRetireKeyCommand;
 use ArtisanBuild\BuiltForCloud\Commands\CreateAdminCommand;
@@ -26,6 +37,8 @@ use ArtisanBuild\BuiltForCloud\Jobs\DeliverOwnershipWebhook;
 use ArtisanBuild\BuiltForCloud\Testing\ConsumerConformance;
 use ArtisanBuild\BuiltForCloud\Testing\ContractAssertions;
 use ArtisanBuild\BuiltForCloud\Testing\FleetConformance;
+use ArtisanBuild\BuiltForCloud\Testing\McpDelegatedEnforcement;
+use ArtisanBuild\WakeServer\Lake\LakeReader;
 use Composer\InstalledVersions;
 
 uses(ContractAssertions::class);
@@ -52,6 +65,18 @@ it('passes the version 1 reference-consumer conformance spec', function (): void
 
         return $members;
     };
+    $mcpTools = [
+        ListApps::class,
+        SearchLogs::class,
+        TailLogs::class,
+        AggregateLogs::class,
+        RecentErrors::class,
+        GetContext::class,
+        IngestHealth::class,
+        DeleteAppLogs::class,
+        RevokeCredential::class,
+        RotateCredential::class,
+    ];
 
     $expected = [
         'runtime.meta' => [],
@@ -117,8 +142,30 @@ it('passes the version 1 reference-consumer conformance spec', function (): void
             'ArtisanBuild\BuiltForCloud\Mcp\TwoPhaseConfirmationStore|built-for-cloud.manifest.slug|1',
             'ArtisanBuild\BuiltForCloud\UiCredentialPurposes|built-for-cloud.ui.credential_purposes|1',
         ]),
-        'mcp_delegated' => [],
+        'mcp_delegated' => $sorted($mcpTools),
     ];
+
+    app()->instance(LakeReader::class, new class implements LakeReader
+    {
+        public function query(string $sql, int $timeout = 20): array
+        {
+            return [];
+        }
+
+        public function literal(?string $value): string
+        {
+            return $value === null ? 'NULL' : "'".str_replace("'", "''", $value)."'";
+        }
+    });
+
+    McpDelegatedEnforcement::assertHonors(WakeMcpServer::class, $mcpTools, arguments: [
+        ListApps::class => ['all_apps' => true],
+        SearchLogs::class => ['all_apps' => true, 'text' => 'probe', 'from' => '2026-01-01', 'to' => '2026-01-01'],
+        TailLogs::class => ['all_apps' => true, 'from' => '2026-01-01', 'to' => '2026-01-01'],
+        AggregateLogs::class => ['all_apps' => true, 'from' => '2026-01-01', 'to' => '2026-01-01'],
+        RecentErrors::class => ['all_apps' => true, 'from' => '2026-01-01', 'to' => '2026-01-01'],
+        IngestHealth::class => ['all_apps' => true],
+    ]);
 
     $report = (new FleetConformance($this))->assert(new ConsumerConformance(
         consumer: 'wake',
@@ -127,9 +174,9 @@ it('passes the version 1 reference-consumer conformance spec', function (): void
         sourceRoots: $sourceRoots,
         providerFiles: $providerFiles,
         runtimeAssertions: ['auth_schema', 'credential_listing', 'meta', 'transport_parity'],
-        capabilities: ['credentials', 'tokens'],
+        capabilities: ['credentials', 'mcp-delegated', 'tokens'],
         purposeMappings: $purposeMappings,
-        mcpServer: null,
+        mcpServer: WakeMcpServer::class,
         expected: $expected,
     ));
 

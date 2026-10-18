@@ -5,14 +5,18 @@ declare(strict_types=1);
 namespace App\Authorization;
 
 use ArtisanBuild\BuiltForCloud\Console\ActingPrincipal;
-use ArtisanBuild\BuiltForCloud\Console\RequestAssertion;
+use ArtisanBuild\BuiltForCloud\Console\ActingPrincipalResolver;
 use ArtisanBuild\BuiltForCloud\Credential;
 use ArtisanBuild\BuiltForCloud\CredentialPurpose;
+use ArtisanBuild\BuiltForCloud\Exceptions\DelegatedPrincipalUnsupported;
+use ArtisanBuild\BuiltForCloud\Exceptions\NoActingPrincipal;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\Request;
 
 final readonly class McpAccess
 {
+    public function __construct(private ActingPrincipalResolver $principals) {}
+
     public function allows(WakeCredentialAbility $ability): bool
     {
         return $this->resolve($ability) instanceof ActingPrincipal;
@@ -37,13 +41,17 @@ final readonly class McpAccess
             return null;
         }
 
-        $delegated = RequestAssertion::principal($request);
-
-        if ($delegated instanceof ActingPrincipal && $delegated->check()) {
-            return $delegated;
+        try {
+            $principal = $this->principals->require($request);
+        } catch (DelegatedPrincipalUnsupported|NoActingPrincipal) {
+            return null;
         }
 
-        $credential = $request->user();
+        if ($principal->delegated) {
+            return $principal;
+        }
+
+        $credential = $principal->principal;
 
         if (! $credential instanceof Credential
             || $credential->purpose !== CredentialPurpose::Mcp
@@ -51,6 +59,6 @@ final readonly class McpAccess
             return null;
         }
 
-        return ActingPrincipal::local('wake.mcp', $credential);
+        return $principal;
     }
 }

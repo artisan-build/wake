@@ -31,8 +31,10 @@ it('registers the exact effect-scoped routes and Wake ability', function (): voi
         ->and($destructive)->not->toBeNull()
         ->and($read?->gatherMiddleware())->toContain('bfc.mcp:product,read')
         ->and($destructive?->gatherMiddleware())->toContain('bfc.mcp:product,destructive')
-        ->and($read?->gatherMiddleware())->not->toContain('bfc.ability:mcp:read', 'bfc.ability:mcp:admin')
-        ->and($destructive?->gatherMiddleware())->not->toContain('bfc.ability:mcp:read', 'bfc.ability:mcp:admin')
+        ->and($read?->gatherMiddleware())->not->toContain('bfc.ability:mcp:read')
+        ->not->toContain('bfc.ability:mcp:admin')
+        ->and($destructive?->gatherMiddleware())->not->toContain('bfc.ability:mcp:read')
+        ->not->toContain('bfc.ability:mcp:admin')
         ->and(config('built-for-cloud.mcp.path'))->toBe('/mcp')
         ->and(config('built-for-cloud.mcp.write_path'))->toBeNull()
         ->and(config('built-for-cloud.mcp.destructive_path'))->toBe('/mcp/destructive')
@@ -93,7 +95,9 @@ it('conforms and lists exactly the ten classified tools', function (): void {
     ])->assertOk()->json('result.tools.*.name');
 
     expect($readTools)->toHaveCount(7)
-        ->not->toContain('delete_app_logs', 'revoke_credential', 'rotate_credential');
+        ->not->toContain('delete_app_logs')
+        ->not->toContain('revoke_credential')
+        ->not->toContain('rotate_credential');
 
     $this->withHeader('Authorization', $credential->bearerHeader())->postJson('/mcp', [
         'jsonrpc' => '2.0',

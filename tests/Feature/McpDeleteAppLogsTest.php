@@ -99,14 +99,16 @@ it('previews exactly without mutation then confirms deletion with bounded attrib
 
     $confirmed = callDeleteTool('/mcp/destructive', $this->credential->bearerHeader(), ['app' => 'alpha', 'confirm' => $confirmation])->assertOk();
     expect(json_decode($confirmed->json('result.content.0.text'), true, flags: JSON_THROW_ON_ERROR))->toMatchArray(['lake_rows' => 2, 'locators' => 1])
-        ->and($confirmed->getContent())->not->toContain('SECRETLOGCANARY', $this->credential->plaintext())
+        ->and($confirmed->getContent())->not->toContain('SECRETLOGCANARY')
+        ->not->toContain($this->credential->plaintext())
         ->and($this->lake->rows)->toBe(0)
         ->and(DB::table('wake_event_locators')->count())->toBe(0);
     $audit = AppActionEvent::query()->sole();
     expect($audit->action)->toBe('app-logs-deleted')
         ->and($audit->actor_type)->toBe(AppActorType::ApiToken)
         ->and($audit->actor_ref)->toBe((string) $this->credential->credential->getAuthIdentifier())
-        ->and(json_encode($audit->getAttributes(), JSON_THROW_ON_ERROR))->not->toContain('alpha', 'SECRETLOGCANARY');
+        ->and(json_encode($audit->getAttributes(), JSON_THROW_ON_ERROR))->not->toContain('alpha')
+        ->not->toContain('SECRETLOGCANARY');
 });
 
 it('binds confirmations to exact arguments and acting subject and refuses replay', function (): void {

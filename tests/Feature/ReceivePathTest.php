@@ -10,6 +10,7 @@ use ArtisanBuild\BuiltForCloud\CredentialStatus;
 use ArtisanBuild\BuiltForCloud\SubjectType;
 use ArtisanBuild\WakeContracts\IngestEnvelope;
 use ArtisanBuild\WakeContracts\IngestProtocol;
+use ArtisanBuild\WakeServer\Ingest\IngestService;
 use ArtisanBuild\WakeServer\Models\ConnectedApp;
 use ArtisanBuild\WakeServer\Models\StagingBatch;
 use Illuminate\Support\Facades\DB;
@@ -376,4 +377,51 @@ it('updates ingest health once without persisting authorization material', funct
     foreach (['emergency', 'alert', 'critical', 'error', 'warning', 'notice', 'info', 'debug', 'log'] as $method) {
         Log::shouldNotHaveReceived($method);
     }
+});
+
+it('replays the original receipt inside accept without charging again when the fast path misses', function (): void {
+    $app = wakeConnectedApp('svc-replay');
+    $envelope = IngestEnvelope::fromJson(json_encode(wakeEnvelope('svc-key', 2, 4), JSON_THROW_ON_ERROR));
+    $service = resolve(IngestService::class);
+
+    $first = $service->accept($app->id, $envelope);
+    expect($first->status)->toBe(IngestProtocol::ACCEPTED_STATUS)
+        ->and($first->body['duplicate'])->toBeFalse()
+        ->and($first->body['accepted_count'])->toBe(2);
+
+    $replay = $service->accept($app->id, $envelope);
+    expect($replay->status)->toBe(IngestProtocol::ACCEPTED_STATUS)
+        ->and($replay->body['batch_id'])->toBe($first->body['batch_id'])
+        ->and($replay->body['accepted_count'])->toBe(2)
+        ->and($replay->body['duplicate'])->toBeTrue()
+        ->and(StagingBatch::query()->where('app_id', $app->id)->count())->toBe(1)
+        ->and(DB::table('wake_ingest_windows')->where('app_id', $app->id)->value('batch_count'))->toBe(1)
+        ->and(DB::table('wake_ingest_windows')->where('app_id', $app->id)->value('event_count'))->toBe(2);
+
+    $app->refresh();
+    expect($app->accepted_rows)->toBe(2)
+        ->and($app->dropped_rows)->toBe(4);
+});
+
+it('does not replay one app idempotency key against a different app', function (): void {
+    $alpha = wakeConnectedApp('cross-alpha');
+    $beta = wakeConnectedApp('cross-beta');
+    wakeCredential($alpha->id, 'alpha-secret');
+    wakeCredential($beta->id, 'beta-secret');
+    $key = 'shared-key';
+
+    $alphaReceipt = wakePost($this, 'alpha-secret', $key, wakeEnvelope($key, 1, 0))->assertAccepted();
+    $betaReceipt = wakePost($this, 'beta-secret', $key, wakeEnvelope($key, 1, 0))->assertAccepted();
+
+    expect($betaReceipt->json('batch_id'))->not->toBe($alphaReceipt->json('batch_id'))
+        ->and($betaReceipt->json('duplicate'))->toBeFalse()
+        ->and(StagingBatch::query()->where('app_id', 'cross-alpha')->count())->toBe(1)
+        ->and(StagingBatch::query()->where('app_id', 'cross-beta')->count())->toBe(1);
+
+    $alpha->refresh();
+    $beta->refresh();
+    expect($alpha->accepted_rows)->toBe(1)
+        ->and($beta->accepted_rows)->toBe(1)
+        ->and($alpha->rejected_batches)->toBe(0)
+        ->and($beta->rejected_batches)->toBe(0);
 });

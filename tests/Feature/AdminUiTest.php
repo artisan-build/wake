@@ -187,6 +187,11 @@ it('serves a public landing page that routes people to the admin without viewer 
         ->assertSee('<img src="http://localhost/favicon.svg"', false)
         ->assertDontSee('https://scalpels.app/img/products/transparent/wake.png', false);
 
-    expect($response->getContent())->not->toContain('Log viewer', 'Search logs', '<canvas', 'Charts', 'Alerts');
-    $this->get('/apps')->assertRedirect('/bfc/login');
+    expect($response->getContent())
+        ->not->toContain('Log viewer')
+        ->not->toContain('Search logs')
+        ->not->toContain('<canvas')
+        ->not->toContain('Charts')
+        ->not->toContain('Alerts');
+    $this->get('/apps')->assertRedirect('/bfc/login?intended=%2Fapps');
 });

@@ -14,7 +14,7 @@
     "require": {
         "php": "^8.3",
         "ext-zip": "*",
-        "artisan-build/built-for-cloud": "^0.20.1",
+        "artisan-build/built-for-cloud": "^0.20.2",
         "artisan-build/hone-client": "^1.8.2",
         "artisan-build/wake-client": "^0.1",
         "artisan-build/wake-contracts": "^0.1",

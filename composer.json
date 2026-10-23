@@ -12,10 +12,10 @@
     ],
     "license": "MIT",
     "require": {
-        "ext-zip": "*",
         "php": "^8.3",
+        "ext-zip": "*",
         "artisan-build/built-for-cloud": "^0.20",
-        "artisan-build/hone-client": "^1.6",
+        "artisan-build/hone-client": "^1.8.1",
         "artisan-build/wake-client": "^0.1",
         "artisan-build/wake-contracts": "^0.1",
         "artisan-build/wake-server": "^0.1",

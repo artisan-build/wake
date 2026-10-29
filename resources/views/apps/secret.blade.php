@@ -1,4 +1,7 @@
 <x-bfc-layout :title="$rotated ? 'Credential rotated' : 'App created'">
+<x-slot:sidebar>
+    @include('partials.sidebar')
+</x-slot:sidebar>
 <section data-testid="app-secret" class="grid gap-8">
     <header class="grid gap-4">
         <h1 class="font-display text-4xl font-normal tracking-tight text-clay-ink">{{ $rotated ? 'Credential rotated' : 'App created' }}</h1>

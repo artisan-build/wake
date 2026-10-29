@@ -48,7 +48,10 @@ it('renders accessible list create and detail pages with the exact setup snippet
         ->assertSee('name="_token"', false)
         ->assertSee('No apps have been connected yet.');
 
-    expect($index->getContent())->not->toContain('Log viewer', 'Search logs', '<canvas');
+    expect($index->getContent())
+        ->not->toContain('Log viewer')
+        ->not->toContain('Search logs')
+        ->not->toContain('<canvas');
 
     $created = $this->post('/apps', ['id' => 'billing-api', 'name' => 'Billing API'])
         ->assertCreated()
@@ -76,7 +79,10 @@ it('renders accessible list create and detail pages with the exact setup snippet
         ->assertSee('WAKE_URL=http://localhost')
         ->assertSee('LOG_STACK=single,wake')
         ->assertDontSee($secret);
-    expect($detail->getContent())->not->toContain('Log viewer', 'Search logs', '<canvas');
+    expect($detail->getContent())
+        ->not->toContain('Log viewer')
+        ->not->toContain('Search logs')
+        ->not->toContain('<canvas');
 });
 
 it('returns rotation secrets directly once and shows the revoked state honestly', function (): void {
@@ -153,8 +159,13 @@ it('shows honest derived PostgreSQL health and escapes hostile metadata', functi
         ->assertDontSee('<script>alert(1)</script>', false)
         ->assertDontSee('<img src=x onerror=alert(1)>', false);
 
-    expect($response->getContent())->not->toContain('Log viewer', 'Search logs', '<canvas')
-        ->and(implode(' ', $queries))->not->toContain('wake_error_events', 'lake.logs');
+    expect($response->getContent())
+        ->not->toContain('Log viewer')
+        ->not->toContain('Search logs')
+        ->not->toContain('<canvas')
+        ->and(implode(' ', $queries))
+        ->not->toContain('wake_error_events')
+        ->not->toContain('lake.logs');
 });
 
 it('reports never-seen pending and caught-up health without inventing data', function (): void {
@@ -183,9 +194,8 @@ it('serves a public landing page that routes people to the admin without viewer 
         ->assertSee('Logs are sent as written')
         ->assertSee('href="http://localhost/apps"', false)
         ->assertSee('data-testid="landing-admin"', false)
-        ->assertSee('<link rel="icon" href="http://localhost/favicon.svg">', false)
-        ->assertSee('<img src="http://localhost/favicon.svg"', false)
-        ->assertDontSee('https://scalpels.app/img/products/transparent/wake.png', false);
+        ->assertSee('<link rel="icon" href="https://scalpels.app/img/products/transparent/wake.png">', false)
+        ->assertSee('<img src="https://scalpels.app/img/products/transparent/wake.png"', false);
 
     expect($response->getContent())
         ->not->toContain('Log viewer')

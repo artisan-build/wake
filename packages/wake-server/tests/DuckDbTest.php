@@ -226,3 +226,21 @@ SH);
     $lake->expireSnapshots($maintenanceAt);
     $lake->cleanupFiles();
 });
+
+it('creates the local DuckLake directory before attaching its file catalog', function (): void {
+    file_put_contents($this->binary, <<<'SH'
+#!/bin/sh
+cat >/dev/null
+printf '%s\n' '{"marker":"__WAKE_RESULT_START__"}' '{"marker":"__WAKE_RESULT_END__"}'
+SH);
+    config()->set('wake-server.lake.cloud', false);
+    config()->set('wake-server.lake.postgres_catalog', false);
+    $directory = storage_path('app/ducklake');
+    if (is_dir($directory)) {
+        exec('rm -rf '.escapeshellarg($directory));
+    }
+
+    (new DuckDb)->query('SELECT 1');
+
+    expect(is_dir($directory.'/data'))->toBeTrue();
+});

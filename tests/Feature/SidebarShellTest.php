@@ -43,8 +43,9 @@ it('renders the complete app navigation once in the package sidebar with the cur
 
     $created = $this->post('/apps', ['id' => 'sidebar-app', 'name' => 'Sidebar App'])->assertCreated();
 
+    $this->get('/')->assertRedirect('/dashboard');
+
     $pages = [
-        [$this->get('/')->assertOk(), 'landing', null],
         [$this->get('/docs/setup')->assertOk(), 'documentation-content', route('docs.show', 'setup')],
         [$this->get('/docs/agent-redaction')->assertOk(), 'documentation-content', route('docs.show', 'agent-redaction')],
         [$this->get('/docs/retention-cost')->assertOk(), 'documentation-content', route('docs.show', 'retention-cost')],

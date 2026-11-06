@@ -26,7 +26,8 @@ it('contains wide generated Markdown code inside the 390px documentation column'
         ->assertSee('max-width: 100%; overflow-x: auto; white-space: pre;', false)
         ->assertSee('min-width:0; overflow:hidden;', false);
 
-    expect($response->getContent())->not->toContain('min-width: max-content', 'overflow-x: visible');
+    expect($response->getContent())->not->toContain('min-width: max-content')
+        ->not->toContain('overflow-x: visible');
 });
 
 it('documents the client install values and raw payload risk', function (): void {
@@ -39,7 +40,9 @@ it('documents the client install values and raw payload risk', function (): void
         ->assertSee('secrets, tokens, personal data, or other sensitive values')
         ->assertSee('redact them in the client before delivery.');
 
-    expect($response->getContent())->not->toContain('Log viewer', 'Search logs', '<canvas');
+    expect($response->getContent())->not->toContain('Log viewer')
+        ->not->toContain('Search logs')
+        ->not->toContain('<canvas');
 });
 
 it('documents the real filter contract binding and drop behavior as escaped code', function (): void {
@@ -51,7 +54,10 @@ it('documents the real filter contract binding and drop behavior as escaped code
         ->assertSee('&lt;?php', false)
         ->assertDontSee('<?php', false);
 
-    expect($response->getContent())->not->toContain('<script>', 'Log viewer', 'Search logs', '<canvas');
+    expect($response->getContent())->not->toContain('<script>')
+        ->not->toContain('Log viewer')
+        ->not->toContain('Search logs')
+        ->not->toContain('<canvas');
 });
 
 it('documents retention ordering and the exact cost basis', function (): void {

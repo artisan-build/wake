@@ -67,7 +67,8 @@ it('previews secret-free then rotates with preserved binding and response-only b
     expect($confirmation)->toBeString()
         ->and($source->credential->refresh()->rotated_at)->toBeNull()
         ->and(CredentialAuditEvent::query()->where('credential_id', $source->credential->id)->count())->toBe($auditBefore)
-        ->and($preview->getContent())->not->toContain($source->plaintext(), $this->actor->plaintext());
+        ->and($preview->getContent())->not->toContain($source->plaintext())
+        ->not->toContain($this->actor->plaintext());
 
     $confirmed = callRotateTool($this->actor->bearerHeader(), [...$arguments, 'confirm' => $confirmation])->assertOk();
     $payload = json_decode($confirmed->json('result.content.0.text'), true, flags: JSON_THROW_ON_ERROR);
@@ -76,7 +77,8 @@ it('previews secret-free then rotates with preserved binding and response-only b
 
     expect($newSecret)->toBeString()->not->toBe('')
         ->and(substr_count($confirmed->getContent(), $newSecret))->toBe(1)
-        ->and($confirmed->getContent())->not->toContain($source->plaintext(), $this->actor->plaintext())
+        ->and($confirmed->getContent())->not->toContain($source->plaintext())
+        ->not->toContain($this->actor->plaintext())
         ->and(hash_equals((string) $replacement->secret_hash, hash('sha256', $newSecret)))->toBeTrue()
         ->and($replacement->purpose)->toBe(CredentialPurpose::Consumption)
         ->and($replacement->abilities)->toBe([WakeCredentialAbility::Read->value])
@@ -95,7 +97,9 @@ it('previews secret-free then rotates with preserved binding and response-only b
     expect($events->pluck('event')->all())->toContain(LifecycleEventType::Issued, LifecycleEventType::Rotated)
         ->and($events->where('actor_type', AuditActorType::OperatorIntegration)->pluck('actor_ref')->unique()->all())->toBe([(string) $this->actor->credential->getAuthIdentifier()])
         ->and($events->firstWhere('event', LifecycleEventType::Rotated)?->superseded_by_credential_id)->toBe($replacement->id)
-        ->and(json_encode($events->map->getAttributes()->all(), JSON_THROW_ON_ERROR))->not->toContain($newSecret, $source->plaintext(), $this->actor->plaintext())
+        ->and(json_encode($events->map->getAttributes()->all(), JSON_THROW_ON_ERROR))->not->toContain($newSecret)
+        ->not->toContain($source->plaintext())
+        ->not->toContain($this->actor->plaintext())
         ->and(json_encode($replacement->getAttributes(), JSON_THROW_ON_ERROR))->not->toContain($newSecret);
 });
 
@@ -120,7 +124,8 @@ it('refuses every ineligible rotate target before confirmation mutation audit or
         $response = callRotateTool($this->actor->bearerHeader(), ['app' => 'alpha', 'credential_id' => $target->credential->id])->assertOk();
         $response->assertJsonPath('result.isError', true);
         expect($response->json('result._meta.two_phase.confirmation'))->toBeNull()
-            ->and($response->getContent())->not->toContain($target->plaintext(), $this->actor->plaintext());
+            ->and($response->getContent())->not->toContain($target->plaintext())
+            ->not->toContain($this->actor->plaintext());
     }
     foreach ([
         ['app' => 'missing', 'credential_id' => $targets[0]->credential->id],
@@ -189,7 +194,10 @@ it('returns a safe MCP error when the rotate target moves after selection', func
     $response->assertJsonPath('result.isError', true);
     expect($retargeted)->toBeTrue()
         ->and($response->getContent())->toContain('The ingest credential changed during rotation.')
-        ->not->toContain($source->credential->id, $movedSubject, 'Sensitive MCP ingest', $source->plaintext())
+        ->not->toContain($source->credential->id)
+        ->not->toContain($movedSubject)
+        ->not->toContain('Sensitive MCP ingest')
+        ->not->toContain($source->plaintext())
         ->and(Credential::query()->count())->toBe($credentialsBefore)
         ->and(CredentialAuditEvent::query()->count())->toBe($auditsBefore)
         ->and(Credential::query()->findOrFail($source->credential->id)->rotated_at)->toBeNull();
@@ -236,7 +244,12 @@ it('warns MCP when the target moves after the replacement commits', function ():
     expect($retargeted)->toBeTrue()
         ->and($replacementId)->toBeString()
         ->and($response->getContent())->toContain('Rotation partially completed. The previous credential may remain active; review and revoke it before retrying.')
-        ->not->toContain($source->credential->id, $replacementId, $movedSubject, 'Sensitive MCP ingest', $source->plaintext(), $this->actor->plaintext())
+        ->not->toContain($source->credential->id)
+        ->not->toContain($replacementId)
+        ->not->toContain($movedSubject)
+        ->not->toContain('Sensitive MCP ingest')
+        ->not->toContain($source->plaintext())
+        ->not->toContain($this->actor->plaintext())
         ->and(Credential::query()->count())->toBe($credentialsBefore + 1)
         ->and(CredentialAuditEvent::query()->count())->toBe($auditsBefore + 2)
         ->and($old->rotated_at)->not->toBeNull()
@@ -285,15 +298,13 @@ it('preserves MCP failure semantics for an unrelated retirement failure', functi
     expect($retirementFailed)->toBeTrue()
         ->and($replacementId)->toBeString()
         ->and($response->getContent())->toContain('An internal server error occurred.')
-        ->not->toContain(
-            'The ingest credential changed during rotation.',
-            'Rotation partially completed.',
-            $source->credential->id,
-            $replacementId,
-            'Sensitive MCP ingest',
-            $source->plaintext(),
-            $this->actor->plaintext(),
-        )
+        ->not->toContain('The ingest credential changed during rotation.')
+        ->not->toContain('Rotation partially completed.')
+        ->not->toContain($source->credential->id)
+        ->not->toContain($replacementId)
+        ->not->toContain('Sensitive MCP ingest')
+        ->not->toContain($source->plaintext())
+        ->not->toContain($this->actor->plaintext())
         ->and(Credential::query()->count())->toBe($credentialsBefore + 1)
         ->and(CredentialAuditEvent::query()->count())->toBe($auditsBefore + 2)
         ->and($old->rotated_at)->not->toBeNull()

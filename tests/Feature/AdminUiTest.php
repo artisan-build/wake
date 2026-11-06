@@ -121,7 +121,9 @@ it('shows browser validation errors and keeps admin routes on the human session 
     }
 
     $paths = collect(Route::getRoutes())->map->uri()->all();
-    expect($paths)->not->toContain('logs', 'logs/search', 'search');
+    expect($paths)->not->toContain('logs')
+        ->not->toContain('logs/search')
+        ->not->toContain('search');
 });
 
 it('shows honest derived PostgreSQL health and escapes hostile metadata', function (): void {

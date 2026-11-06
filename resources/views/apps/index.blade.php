@@ -1,4 +1,7 @@
 <x-bfc-layout title="Apps">
+<x-slot:sidebar>
+    @include('partials.sidebar')
+</x-slot:sidebar>
 <style>
     [data-testid="apps-create"] input { width: 100%; border: 1px solid var(--color-clay-edge); border-radius: .75rem; background: var(--color-clay-surface); padding: .75rem 1rem; color: var(--color-clay-ink); }
     [data-testid="apps-create"] input:focus-visible { outline: 3px solid var(--color-clay-iron); outline-offset: 2px; }

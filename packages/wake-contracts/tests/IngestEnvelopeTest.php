@@ -25,6 +25,19 @@ it('round trips every envelope and event field through canonical JSON', function
         ->and($roundTrip->rows[0]->correlationId)->toBe('req-1');
 });
 
+it('normalizes context and extra key ordering in the array shape, not only in JSON', function (): void {
+    $event = contractEvent([
+        'context' => ['zeta' => 1, 'alpha' => ['inner-z' => 1, 'inner-a' => 2]],
+        'extra' => ['mike' => 1, 'bravo' => 2],
+    ]);
+
+    $array = $event->toArray();
+
+    expect(array_keys($array['context']))->toBe(['alpha', 'zeta'])
+        ->and(array_keys($array['context']['alpha']))->toBe(['inner-a', 'inner-z'])
+        ->and(array_keys($array['extra']))->toBe(['bravo', 'mike']);
+});
+
 it('accepts both batch bounds', function (int $count): void {
     $rows = array_fill(0, $count, contractEvent());
 
@@ -37,6 +50,28 @@ it('rejects batches outside the bounds', function (array $rows): void {
     'zero rows' => [[]],
     '501 rows' => [array_fill(0, 501, contractEvent())],
 ])->throws(ContractValidationException::class, 'must contain between 1 and 500 events');
+
+it('rejects envelope guard violations at their boundaries', function (Closure $build): void {
+    $build();
+})->with([
+    'client version over 64 bytes' => fn () => contractEnvelope(['clientVersion' => str_repeat('v', 65)]),
+    'idempotency key with forbidden characters' => fn () => contractEnvelope(['idempotencyKey' => 'bad key!']),
+])->throws(ContractValidationException::class);
+
+it('accepts a zero dropped count and rejects constructor rows that are not events', function (): void {
+    expect(contractEnvelope(['droppedCount' => 0])->droppedCount)->toBe(0);
+
+    expect(fn () => new IngestEnvelope(1, '1.2.3', 0, '01ARZ3NDEKTSV4RRFFQ69G5FAX', ['not-an-event']))
+        ->toThrow(ContractValidationException::class, 'must be a LogEvent');
+});
+
+it('rejects list-shaped rows when parsing an envelope', function (): void {
+    $payload = contractEnvelope()->toArray();
+    $payload['rows'] = [['not', 'an', 'object']];
+
+    expect(fn () => IngestEnvelope::fromArray($payload))
+        ->toThrow(ContractValidationException::class, 'must be an object');
+});
 
 it('rejects invalid event identifiers', function (string $eventId): void {
     contractEvent(['eventId' => $eventId]);

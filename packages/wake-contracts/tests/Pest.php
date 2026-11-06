@@ -3,9 +3,11 @@
 declare(strict_types=1);
 
 use ArtisanBuild\WakeContracts\Enums\LogLevel;
+use ArtisanBuild\WakeContracts\Enums\StagingBatchStatus;
 use ArtisanBuild\WakeContracts\ExceptionData;
 use ArtisanBuild\WakeContracts\IngestEnvelope;
 use ArtisanBuild\WakeContracts\LogEvent;
+use ArtisanBuild\WakeContracts\StagingBatch;
 
 function contractEvent(array $overrides = []): LogEvent
 {
@@ -43,4 +45,28 @@ function contractEnvelope(array $overrides = []): IngestEnvelope
     ], $overrides);
 
     return new IngestEnvelope(...$values);
+}
+
+function stagingBatch(array $overrides = []): StagingBatch
+{
+    $envelopeOverrides = $overrides['envelope'] ?? [];
+    unset($overrides['envelope']);
+
+    $values = array_replace([
+        'batchId' => '01ARZ3NDEKTSV4RRFFQ69G5FAW',
+        'appId' => 'app-authenticated',
+        'idempotencyKey' => '01ARZ3NDEKTSV4RRFFQ69G5FAX',
+        'envelopeVersion' => 1,
+        'clientVersion' => '1.2.3',
+        'droppedCount' => 7,
+        'payload' => contractEnvelope($envelopeOverrides),
+        'rowCount' => 1,
+        'status' => StagingBatchStatus::Pending,
+        'createdAt' => '2026-10-11T12:35:00.000000Z',
+        'updatedAt' => '2026-10-11T12:35:00.000000Z',
+        'claimedAt' => null,
+        'flushedAt' => null,
+    ], $overrides);
+
+    return new StagingBatch(...$values);
 }

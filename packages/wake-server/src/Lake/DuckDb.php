@@ -209,6 +209,12 @@ final class DuckDb implements LakeAppDeletion, LakeMaintenance, LakeReader, Lake
             $catalog = 'ducklake:'.storage_path('app/ducklake/catalog.ducklake');
             $data = storage_path('app/ducklake/data/');
 
+            // DuckDB creates the catalog file but not its directory, and a fresh
+            // checkout has neither, so the first bootstrap would fail to attach.
+            if (! is_dir($data) && ! mkdir($data, 0755, true) && ! is_dir($data)) {
+                throw new RuntimeException('Unable to create the local DuckLake directory.');
+            }
+
             return "{$settings} {$extensions} ATTACH ".$this->literal($catalog).' AS lake (DATA_PATH '.$this->literal($data).", DATA_INLINING_ROW_LIMIT 0{$metadataSchema});";
         }
 

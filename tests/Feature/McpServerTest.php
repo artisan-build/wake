@@ -12,7 +12,6 @@ use ArtisanBuild\BuiltForCloud\CredentialPurpose;
 use ArtisanBuild\BuiltForCloud\Mcp\RequestEffectCeiling;
 use ArtisanBuild\BuiltForCloud\SubjectType;
 use ArtisanBuild\BuiltForCloud\Testing\CredentialAbilityAssertions;
-use ArtisanBuild\BuiltForCloud\Testing\McpDelegatedTools;
 use ArtisanBuild\BuiltForCloud\Testing\McpProductAdmission;
 use ArtisanBuild\BuiltForCloud\Testing\WithCredentials;
 use Carbon\CarbonImmutable;
@@ -32,9 +31,9 @@ it('registers the exact effect-scoped routes and Wake ability', function (): voi
         ->and($read?->gatherMiddleware())->toContain('bfc.mcp:product,read')
         ->and($destructive?->gatherMiddleware())->toContain('bfc.mcp:product,destructive')
         ->and($read?->gatherMiddleware())->not->toContain('bfc.ability:mcp:read')
-        ->not->toContain('bfc.ability:mcp:admin')
+        ->and($read?->gatherMiddleware())->not->toContain('bfc.ability:mcp:admin')
         ->and($destructive?->gatherMiddleware())->not->toContain('bfc.ability:mcp:read')
-        ->not->toContain('bfc.ability:mcp:admin')
+        ->and($destructive?->gatherMiddleware())->not->toContain('bfc.ability:mcp:admin')
         ->and(config('built-for-cloud.mcp.path'))->toBe('/mcp')
         ->and(config('built-for-cloud.mcp.write_path'))->toBeNull()
         ->and(config('built-for-cloud.mcp.destructive_path'))->toBe('/mcp/destructive')
@@ -106,7 +105,6 @@ it('conforms and lists exactly the ten classified tools', function (): void {
         'params' => ['name' => 'delete_app_logs', 'arguments' => ['app' => 'example']],
     ])->assertStatus(400)->assertJsonPath('error.message', 'effect_above_ceiling');
 
-    McpDelegatedTools::assertConforms(WakeMcpServer::class);
 });
 
 it('requires the exact Wake ability and rejects ingest credentials on both doors', function (): void {

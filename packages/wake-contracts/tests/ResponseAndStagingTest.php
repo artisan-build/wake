@@ -33,6 +33,59 @@ it('rejects body-supplied identity instead of ignoring it', function (string $id
 })->with(['app', 'app_id', 'application_id'])
     ->throws(ContractValidationException::class, 'is not a recognized contract field');
 
+it('rejects staging identity fields with their own guard messages before the payload match', function (Closure $build, string $message): void {
+    expect($build)->toThrow(ContractValidationException::class, $message);
+})->with([
+    'batch id not a ulid' => [fn () => stagingBatch(['batchId' => 'not-a-ulid']), 'must be a canonical uppercase ULID'],
+    'app id over 255 bytes' => [fn () => stagingBatch(['appId' => str_repeat('a', 256)]), 'must be at most'],
+    'idempotency key forbidden characters' => [fn () => stagingBatch(['idempotencyKey' => 'bad key!']), 'may contain only ASCII letters'],
+    'unsupported envelope version' => [fn () => stagingBatch(['envelopeVersion' => 99]), 'received envelope version 99'],
+    'client version over 64 bytes' => [fn () => stagingBatch(['clientVersion' => str_repeat('v', 65)]), 'must be at most'],
+    'negative dropped count' => [fn () => stagingBatch(['droppedCount' => -1]), 'must be zero or greater'],
+]);
+
+it('accepts a zero dropped count on a staging batch when the payload agrees', function (): void {
+    expect(stagingBatch(['droppedCount' => 0, 'envelope' => ['droppedCount' => 0]])->droppedCount)->toBe(0);
+});
+
+it('rejects staging batches whose metadata mismatches the payload', function (Closure $build): void {
+    $build();
+})->with([
+    'idempotency key' => fn () => stagingBatch(['idempotencyKey' => '01ARZ3NDEKTSV4RRFFQ69G5FBY']),
+    'client version' => fn () => stagingBatch(['clientVersion' => '9.9.9']),
+    'dropped count' => fn () => stagingBatch(['droppedCount' => 3]),
+    'row count' => fn () => stagingBatch(['rowCount' => 2]),
+])->throws(ContractValidationException::class);
+
+it('rejects staging batches with non-canonical timestamps', function (Closure $build): void {
+    $build();
+})->with([
+    'created at' => fn () => stagingBatch(['createdAt' => '2026-10-11 12:35:00']),
+    'updated at' => fn () => stagingBatch(['updatedAt' => 'nope']),
+    'claimed at' => fn () => stagingBatch(['claimedAt' => 'nope']),
+    'flushed at' => fn () => stagingBatch(['flushedAt' => '2026-10-11T14:00:00Z']),
+])->throws(ContractValidationException::class);
+
+it('round trips claimed and flushed timestamps through the array shape', function (): void {
+    $staging = stagingBatch([
+        'claimedAt' => '2026-10-11T13:00:00.000000Z',
+        'flushedAt' => '2026-10-11T14:00:00.000000Z',
+    ]);
+    $roundTrip = StagingBatch::fromJson($staging->toJson());
+
+    expect($roundTrip->claimedAt)->toBe('2026-10-11T13:00:00.000000Z')
+        ->and($roundTrip->flushedAt)->toBe('2026-10-11T14:00:00.000000Z')
+        ->and($staging->toArray())->toHaveKeys(['claimed_at', 'flushed_at']);
+});
+
+it('rejects staging arrays missing required fields while keeping the optional ones', function (): void {
+    $array = stagingBatch(['claimedAt' => '2026-10-11T13:00:00.000000Z'])->toArray();
+    unset($array['client_version']);
+
+    expect(fn () => StagingBatch::fromArray($array))
+        ->toThrow(ContractValidationException::class, 'is required');
+});
+
 it('round trips accepted receipts and uses 202 for acceptance and replay', function (bool $duplicate): void {
     $receipt = new AcceptedReceipt('01ARZ3NDEKTSV4RRFFQ69G5FAW', 12, $duplicate);
 

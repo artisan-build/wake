@@ -1,4 +1,7 @@
 <x-bfc-layout :title="$app->name">
+<x-slot:sidebar>
+    @include('partials.sidebar')
+</x-slot:sidebar>
 <section data-testid="app-detail" class="grid gap-8">
     <nav aria-label="Breadcrumb"><a class="bfc-link" href="{{ route('apps.index') }}">Apps</a></nav>
     <header class="grid gap-4">

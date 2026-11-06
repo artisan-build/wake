@@ -1,4 +1,7 @@
 <x-bfc-layout title="Wake">
+<x-slot:sidebar>
+    @include('partials.sidebar')
+</x-slot:sidebar>
 <section data-testid="landing" class="grid gap-8 py-4 lg:py-10">
     <header class="grid gap-4">
         <h1 class="font-display text-4xl font-normal tracking-tight text-clay-ink sm:text-5xl">Logs for your agents</h1>

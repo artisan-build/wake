@@ -69,7 +69,7 @@ jobs:
         run: php artisan test
 
       - name: Run Security Audit
-        run: composer audit
+        run: composer audit --locked --abandoned=report
 
   packages:
     name: package / ${{ matrix.package }} / PHP 8.5
@@ -113,7 +113,7 @@ jobs:
 
       - name: Run Security Audit
         working-directory: packages/${{ matrix.package }}
-        run: composer audit
+        run: composer audit --locked --abandoned=report
 
   lowest-deps:
     name: tests (lowest deps) / Laravel ${{ matrix.laravel }} / PHP 8.5

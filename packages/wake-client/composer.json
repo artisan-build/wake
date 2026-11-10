@@ -45,7 +45,7 @@
         "lint": "pint",
         "lint:test": "pint --test",
         "stan": "phpstan analyse src --level=max --no-progress",
-        "ready": ["@lint:test", "@stan", "@test", "composer audit"]
+        "ready": ["@lint:test", "@stan", "@test", "composer audit --abandoned=report"]
     },
     "extra": {
         "laravel": {

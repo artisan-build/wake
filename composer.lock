@@ -304,7 +304,7 @@
             "dist": {
                 "type": "path",
                 "url": "packages/wake-client",
-                "reference": "b9fc014c152bf631928b4e49ad1643189dfd8129"
+                "reference": "c7d979c7e72452c5052d05df110f5998b34b989c"
             },
             "require": {
                 "artisan-build/wake-contracts": "^0.1",
@@ -358,7 +358,7 @@
                     "@lint:test",
                     "@stan",
                     "@test",
-                    "composer audit"
+                    "composer audit --abandoned=report"
                 ]
             },
             "license": [
@@ -382,7 +382,7 @@
             "dist": {
                 "type": "path",
                 "url": "packages/wake-contracts",
-                "reference": "0126a74794b12f226ce8c72282a534844e6b3f86"
+                "reference": "d9b85c9b471214a0f49c65e8c5895b1ca0821e31"
             },
             "require": {
                 "php": "^8.3"
@@ -420,7 +420,7 @@
                     "@lint:test",
                     "@stan",
                     "@test",
-                    "composer audit"
+                    "composer audit --abandoned=report"
                 ]
             },
             "license": [
@@ -444,7 +444,7 @@
             "dist": {
                 "type": "path",
                 "url": "packages/wake-server",
-                "reference": "e9af3888ac8c45bdf8ae894b06e5aa10e64fa28d"
+                "reference": "099ca111a7aa4bdfff0919860108450a071e073d"
             },
             "require": {
                 "artisan-build/built-for-cloud": "^0.21 || ^0.22.0",
@@ -497,7 +497,7 @@
                     "@lint:test",
                     "@stan",
                     "@test",
-                    "composer audit"
+                    "composer audit --abandoned=report"
                 ]
             },
             "license": [

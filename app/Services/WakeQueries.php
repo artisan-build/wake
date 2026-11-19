@@ -79,7 +79,9 @@ final readonly class WakeQueries
         $columns = array_map(static fn (string $group): string => match ($group) {
             'app' => 'app_id', default => $group,
         }, $groups);
-        $query = DB::table('wake_hourly_counts')->whereBetween('hour', [$from, $to]);
+        $query = DB::table('wake_hourly_counts')
+            ->where('hour', '>=', $from)
+            ->where('hour', '<', $to);
         $this->postgresFilters($query, $app, $filters);
         $query->select([...$columns, DB::raw('sum(count) AS count')])->groupBy($columns);
         in_array('hour', $columns, true) ? $query->orderByDesc('hour') : $query->orderBy($columns[0]);

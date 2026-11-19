@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Services\WakeQueries;
 use ArtisanBuild\WakeServer\Lake\LakeReader;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 
 final class RecordingLakeReader implements LakeReader
@@ -128,6 +129,25 @@ it('uses PostgreSQL derived tables for aggregates errors apps and health', funct
         ->and($health['rows'][0]['pending_batches'])->toBe(0)
         ->and($health['rows'][0]['lag_seconds'])->toBe(30.0)
         ->and($this->lake->sql)->toBe([]);
+});
+
+it('does not include an hourly bucket in a zero-length aggregate window', function (): void {
+    DB::table('wake_hourly_counts')->insert([
+        'app_id' => 'alpha',
+        'environment' => 'production',
+        'level' => 'error',
+        'hour' => CarbonImmutable::parse('2026-11-19T14:03:32Z')->startOfHour(),
+        'count' => 2,
+    ]);
+
+    $aggregate = $this->queries->aggregate([
+        'app' => 'alpha',
+        'from' => '2026-11-19T14:00:00Z',
+        'to' => '2026-11-19T14:00:00Z',
+        'group_by' => ['level'],
+    ]);
+
+    expect($aggregate['rows'])->toBe([]);
 });
 
 it('looks up context in PostgreSQL then queries one exact app and UTC day with hard bounds', function (): void {
